@@ -1,0 +1,126 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- PEOPLE & ROLES ---
+
+model Staff {
+  id           Int           @id @default(autoincrement())
+  name         String
+  role         String        @default("RECEPTION") // ADMIN, RECEPTION
+  bookings     Reservation[] // Virtual: Bookings handled by this staff
+  notes        Note[]        // Virtual: Notes written by this staff
+}
+
+model Owner {
+  id        Int       @id @default(autoincrement())
+  name      String    // The name of the person or company
+  address   String?   // Physical address if needed
+  accounts  Account[] // Virtual: Accounts belonging to this owner
+  createdAt DateTime  @default(now())
+}
+
+model Guest {
+  id        Int           @id @default(autoincrement())
+  firstName String
+  lastName  String
+  phone     String        @unique
+  email     String?
+  bookings  Reservation[] // Virtual: Guest's history
+}
+
+// --- BOOKING LOGIC ---
+
+model Reservation {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  guestId     Int
+  guest       Guest    @relation(fields: [guestId], references: [id])
+  
+  staffId     Int
+  staff       Staff    @relation(fields: [staffId], references: [id])
+
+  totalAmount Decimal  @db.Decimal(12, 2)
+  received    Decimal  @db.Decimal(12, 2) @default(0)
+  status      String   @default("PENDING")
+  
+  rooms        RoomStay[]
+  transactions Transaction[]
+  notes        Note[]
+}
+
+model RoomStay {
+  id            Int         @id @default(autoincrement())
+  reservationId Int
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  roomType      String
+  startDate     DateTime
+  endDate       DateTime
+  adults        Int         @default(2)
+  children      Int         @default(0)
+  price         Decimal     @db.Decimal(12, 2)
+}
+
+// --- FINANCIALS ---
+
+model Account {
+  id           Int           @id @default(autoincrement())
+  title        String        // e.g. "Ziraat Bank Business"
+  iban         String?       
+  balance      Decimal       @default(0) @db.Decimal(12, 2)
+  
+  ownerId      Int
+  owner        Owner         @relation(fields: [ownerId], references: [id])
+  
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+}
+
+model Transaction {
+  id            Int         @id @default(autoincrement())
+  createdAt     DateTime    @default(now())
+  amount        Decimal     @db.Decimal(12, 2)
+  method        String      // CASH, BANK_TRANSFER, CREDIT_CARD
+  
+  accountId     Int
+  account       Account     @relation(fields: [accountId], references: [id])
+
+  reservationId Int
+  reservation   Reservation @relation(fields: [reservationId], references: [id])
+}
+
+// --- MANAGEMENT ---
+
+model Note {
+  id            Int          @id @default(autoincrement())
+  content       String       @db.Text
+  isPinned      Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  
+  reservationId Int?
+  reservation   Reservation? @relation(fields: [reservationId], references: [id])
+  
+  staffId       Int
+  staff         Staff        @relation(fields: [staffId], references: [id])
+}
+
+model PriceRule {
+  id           Int        @id @default(autoincrement())
+  name         String
+  startDate    DateTime
+  endDate      DateTime
+  price        Decimal    @db.Decimal(12, 2)
+  roomType     String
+  priority     Int        @default(1)
+}

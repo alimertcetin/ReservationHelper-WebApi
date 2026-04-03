@@ -1,0 +1,31 @@
+{
+  "name": "reservationhelper-webapi",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/alimertcetin/ReservationHelper-WebApi#readme",
+  "bugs": {
+    "url": "https://github.com/alimertcetin/ReservationHelper-WebApi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alimertcetin/ReservationHelper-WebApi.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
+    "dotenv": "^17.4.0",
+    "express": "^5.2.1",
+    "prisma": "^7.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
