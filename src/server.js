@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
 import reservationRoutes from './routes/reservations.js';
 import staffRoutes from './routes/staff.js';
 import accountRoutes from './routes/accounts.js';
@@ -11,6 +12,7 @@ dotenv.config();
 
 const app = express();
 app.use(express.json()); // Essential for req.body!
+app.use(cors());
 connectDB();
 
 // Routes

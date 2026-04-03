@@ -9,40 +9,42 @@ router.post('/', async (req, res) => {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Find or Create the Guest (by Phone)
+      // 1. Upsert Guest
       const guestRecord = await tx.guest.upsert({
         where: { phone: guest.phone },
-        update: { firstName: guest.firstName, lastName: guest.lastName, email: guest.email },
-        create: { ...guest, phone: guest.phone }
+        update: { firstName: guest.firstName, lastName: guest.lastName },
+        create: { ...guest }
       });
 
-      // 2. Create the Reservation
-      const reservation = await tx.reservation.create({
+      // 2. Prepare Rooms (Look up RoomType IDs)
+      const roomStaysData = [];
+      for (const r of rooms) {
+        const typeRecord = await tx.roomType.findUnique({ where: { name: r.type } });
+        roomStaysData.push({
+          roomTypeId: typeRecord?.id,
+          startDate: new Date(r.startDate),
+          endDate: new Date(r.endDate),
+          adults: r.adults,
+          children: r.children,
+          price: r.price
+        });
+      }
+
+      // 3. Create Reservation
+      return await tx.reservation.create({
         data: {
           guestId: guestRecord.id,
           staffId: staffId,
           totalAmount: totalAmount,
-          rooms: {
-            create: rooms.map(room => ({
-              roomType: room.type,
-              startDate: new Date(room.startDate),
-              endDate: new Date(room.endDate),
-              adults: room.adults,
-              children: room.children,
-              price: room.price
-            }))
-          }
+          rooms: { create: roomStaysData }
         },
         include: { rooms: true, guest: true }
       });
-
-      return reservation;
     });
 
     res.status(201).json(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Booking failed" });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -81,6 +83,48 @@ router.post('/:id/pay', async (req, res) => {
     res.json(payment);
   } catch (error) {
     res.status(500).json({ error: "Payment processing failed" });
+  }
+});
+
+// GET: Fetch recent reservations for the sidebar
+router.get('/recent', async (req, res) => {
+  try {
+    const recent = await prisma.reservation.findMany({
+      take: 10, // Get the last 10
+      orderBy: {
+        createdAt: 'desc'
+      },
+      include: {
+        guest: true,
+        rooms: {
+          include: {
+            roomType: true // Get the "Standard Room" etc. details
+          }
+        }
+      }
+    });
+
+    // Map the Prisma data to match the format your Vue ActivityCard expects
+    const formatted = recent.map(res => ({
+      id: res.id,
+      name: res.guest.firstName,
+      surname: res.guest.lastName,
+      phone: res.guest.phone,
+      total: parseFloat(res.totalAmount),
+      received: parseFloat(res.received),
+      time: res.createdAt,
+      rooms: res.rooms.map(r => ({
+        type: r.roomType?.name || "Unknown",
+        price: parseFloat(r.price),
+        startDate: r.startDate,
+        endDate: r.endDate
+      }))
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    console.error("Error fetching recent:", error);
+    res.status(500).json({ error: "Could not load recent activity" });
   }
 });
 
