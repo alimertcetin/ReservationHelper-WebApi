@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from "@prisma/adapter-pg";
 import dotenv from 'dotenv';
 
-dotenv.config(); // Load the DATABASE_URL from .env
+dotenv.config();
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -10,18 +10,32 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log("🌱 Seeding database...");
 
+  // 1. Create Room Type (Updated: basePrice removed)
   const standardRoom = await prisma.roomType.upsert({
     where: { name: "Standard Room" },
     update: {},
     create: { 
       name: "Standard Room", 
-      basePrice: 1000, 
       capacity: 2,
       description: "Comfortable room with a city view."
+    },
+    where: { name: "Deluxe Room" },
+    update: {},
+    create: { 
+      name: "Deluxe Room", 
+      capacity: 2,
+      description: "Pool View."
+    },
+    where: { name: "Test Room" },
+    update: {},
+    create: { 
+      name: "Test Room", 
+      capacity: 4,
+      description: "Test View."
     }
   });
 
-  // 1. Create a Staff Member
+  // 2. Create a Staff Member
   const staff = await prisma.staff.upsert({
     where: { id: 1 },
     update: {},
@@ -31,7 +45,7 @@ async function main() {
     }
   });
 
-  // 2. Create an Account Owner
+  // 3. Create an Account Owner
   const owner = await prisma.owner.upsert({
     where: { id: 1 },
     update: {},
@@ -41,7 +55,7 @@ async function main() {
     }
   });
 
-  // 3. Create a Bank Account
+  // 4. Create a Bank Account
   await prisma.account.upsert({
     where: { id: 1 },
     update: {},
@@ -53,15 +67,15 @@ async function main() {
     }
   });
 
-  // 4. Create some default Price Rules for the suggested price logic
+  // 5. Create Price Rules (Standard Rate is now MANDATORY for pricing)
   await prisma.priceRule.createMany({
     data: [
       { 
         name: "Standard Rate", 
         startDate: new Date("2026-01-01"), 
-        endDate: new Date("2026-12-31"), 
+        endDate: new Date("2030-12-31"), // Extended for long-term safety
         price: 1500, 
-        roomTypeId: standardRoom.id, // Linked via ID now
+        roomTypeId: standardRoom.id,
         priority: 1 
       },
       { 
@@ -69,7 +83,7 @@ async function main() {
         startDate: new Date("2026-06-01"), 
         endDate: new Date("2026-08-31"), 
         price: 2500, 
-        roomTypeId: standardRoom.id, // Linked via ID now
+        roomTypeId: standardRoom.id,
         priority: 10 
       }
     ],

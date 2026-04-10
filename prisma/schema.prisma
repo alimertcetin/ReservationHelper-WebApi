@@ -33,13 +33,12 @@ model Guest {
   bookings  Reservation[]
 }
 
-// --- ROOM TYPES (The New Source of Truth) ---
+// --- ROOM TYPES ---
 
 model RoomType {
   id          Int         @id @default(autoincrement())
   name        String      @unique
   description String?
-  basePrice   Decimal     @db.Decimal(12, 2)
   capacity    Int         @default(2)
   
   roomStays   RoomStay[]
@@ -73,8 +72,7 @@ model RoomStay {
   reservationId Int
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   
-  // New Relation
-  roomTypeId    Int?        // Made optional for the migration phase
+  roomTypeId    Int?        
   roomType      RoomType?   @relation(fields: [roomTypeId], references: [id])
 
   startDate     DateTime
@@ -129,7 +127,6 @@ model PriceRule {
   price         Decimal   @db.Decimal(12, 2)
   priority      Int       @default(1)
 
-  // New Relation (Fixed: Added the opposite side)
   roomTypeId    Int?
   roomType      RoomType? @relation(fields: [roomTypeId], references: [id])
 }
