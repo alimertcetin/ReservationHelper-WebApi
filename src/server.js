@@ -6,6 +6,7 @@ import staffRoutes from './routes/staff.js';
 import accountRoutes from './routes/accounts.js';
 import guestRoutes from './routes/guests.js';
 import priceRoutes from './routes/prices.js';
+import roomTypesRoutes from './routes/roomTypes.js';
 import { connectDB, disconnectDB } from './config/db.js';
 
 dotenv.config();
@@ -21,6 +22,16 @@ app.use('/api/staff', staffRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/guests', guestRoutes);
 app.use('/api/prices', priceRoutes);
+app.use('/api/roomTypes', roomTypesRoutes);
+
+
+// See which prices are requested
+app.use((req, res, next) => {
+  if (req.path === '/api/prices/suggest') {
+    console.log(`[Price Check] Room:${req.query.roomTypeId} From:${req.query.startDate}`);
+  }
+  next();
+});
 
 
 const PORT = process.env.PORT || 5005;
