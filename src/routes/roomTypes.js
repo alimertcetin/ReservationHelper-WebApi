@@ -30,4 +30,29 @@ router.post('/', async(req, res) => {
   res.status(201).json(roomType);
 })
 
+router.put('/:id', async (req, res) => {
+  try {
+      const roomType = await prisma.roomType.update({
+      where: { id: parseInt(req.params.id) },
+      data: req.body,
+      }); 
+    res.json(roomType);
+  }
+  catch (err) {
+    res.status(500).json({error: err});
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    await prisma.roomType.delete({
+      where: {id: parseInt(req.params.id)},
+    });
+    res.status(204).send();
+  }
+  catch (err) {
+    res.status(500);
+  }
+});
+
 export default router;
