@@ -103,8 +103,7 @@ router.get('/recent', async (req, res) => {
         }
       }
     });
-
-    // Map the Prisma data to match the format your Vue ActivityCard expects
+/*
     const formatted = recent.map(res => ({
       id: res.id,
       name: res.guest.firstName,
@@ -119,9 +118,9 @@ router.get('/recent', async (req, res) => {
         startDate: r.startDate,
         endDate: r.endDate
       }))
-    }));
+    }));*/
 
-    res.json(formatted);
+    res.json(recent);
   } catch (error) {
     console.error("Error fetching recent:", error);
     res.status(500).json({ error: "Could not load recent activity" });
