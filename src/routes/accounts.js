@@ -33,21 +33,32 @@ router.get('/', async (req, res) => {
     include: { owner: { select: { name: true } } }
   });
   res.json(accounts);
+  console.log(accounts);
 });
 
 // Create an Account for an Owner
 router.post('/', async (req, res) => {
-  const { title, iban, ownerId, type } = req.body; // Added type
-  const account = await prisma.account.create({
-    data: { 
-      title, 
-      iban, 
-      ownerId, 
-      type: type || 'BANK', // Ensure type is saved
-      balance: 0 
-    }
-  });
-  res.status(201).json(account);
+  const { displayName, type, iban, bankName, ownerId } = req.body;
+
+  // Simple validation
+  if (type === 'BANK' && !iban) {
+    return res.status(400).json({ error: "IBAN is required for bank accounts." });
+  }
+
+  try {
+    const account = await prisma.account.create({
+      data: {
+        displayName,
+        type,
+        iban: type === 'BANK' ? iban : null,
+        bankName: type === 'BANK' ? bankName : null,
+        ownerId: parseInt(ownerId)
+      }
+    });
+    res.json(account);
+  } catch (err) {
+    res.status(500).json({ error: "Could not create account" });
+  }
 });
 
 router.put('/:id', async (req, res) => {

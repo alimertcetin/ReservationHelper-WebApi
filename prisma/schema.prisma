@@ -6,12 +6,25 @@ datasource db {
   provider = "postgresql"
 }
 
+enum AccountType {
+  CASH
+  BANK
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  BANK_TRANSFER
+  ONLINE
+}
+
 // --- PEOPLE & ROLES ---
 
 model Staff {
   id       Int           @id @default(autoincrement())
   name     String
   role     String        @default("RECEPTION")
+  isActive Boolean       @default(true) // Added
   bookings Reservation[]
   notes    Note[]
 }
@@ -20,6 +33,7 @@ model Owner {
   id        Int       @id @default(autoincrement())
   name      String
   address   String?
+  isActive  Boolean   @default(true) // Added
   accounts  Account[]
   createdAt DateTime  @default(now())
 }
@@ -40,7 +54,7 @@ model RoomType {
   name        String      @unique
   description String?
   capacity    Int         @default(2)
-  
+  isActive    Boolean     @default(true) // Added
   roomStays   RoomStay[]
   priceRules  PriceRule[]
 }
@@ -48,20 +62,21 @@ model RoomType {
 // --- BOOKING LOGIC ---
 
 model Reservation {
-  id          Int        @id @default(autoincrement())
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  
-  guestId     Int
-  guest       Guest      @relation(fields: [guestId], references: [id])
-  
-  staffId     Int
-  staff       Staff      @relation(fields: [staffId], references: [id])
+  id        Int      @id @default(autoincrement())
+  isActive  Boolean  @default(true) // Added
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  totalAmount Decimal    @db.Decimal(12, 2)
-  received    Decimal    @db.Decimal(12, 2) @default(0)
-  status      String     @default("PENDING")
-  
+  guestId Int
+  guest   Guest @relation(fields: [guestId], references: [id])
+
+  staffId Int
+  staff   Staff @relation(fields: [staffId], references: [id])
+
+  totalAmount Decimal @db.Decimal(12, 2)
+  received    Decimal @default(0) @db.Decimal(12, 2)
+  status      String  @default("PENDING")
+
   rooms        RoomStay[]
   transactions Transaction[]
   notes        Note[]
@@ -71,39 +86,50 @@ model RoomStay {
   id            Int         @id @default(autoincrement())
   reservationId Int
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  
-  roomTypeId    Int?        
-  roomType      RoomType?   @relation(fields: [roomTypeId], references: [id])
 
-  startDate     DateTime
-  endDate       DateTime
-  adults        Int         @default(2)
-  children      Int         @default(0)
-  price         Decimal     @db.Decimal(12, 2)
+  roomTypeId Int?
+  roomType   RoomType? @relation(fields: [roomTypeId], references: [id])
+
+  startDate DateTime
+  endDate   DateTime
+  adults    Int      @default(2)
+  children  Int      @default(0)
+  price     Decimal  @db.Decimal(12, 2)
 }
 
 // --- FINANCIALS ---
 
 model Account {
-  id           Int           @id @default(autoincrement())
-  title        String
-  iban         String?       
-  balance      Decimal       @default(0) @db.Decimal(12, 2)
-  ownerId      Int
-  owner        Owner         @relation(fields: [ownerId], references: [id])
+  id          Int         @id @default(autoincrement())
+  ownerId     Int
+  displayName String // e.g., "Ziraat Bank Main"
+  type        AccountType @default(BANK)
+  isActive    Boolean     @default(true)
+  balance     Decimal     @default(0) @db.Decimal(12, 2)
+
+  // Bank Specific Details (Nullable for CASH accounts)
+  bankName String? // e.g., "Ziraat Bankası"
+  iban     String? @unique
+
+  // Relations
   transactions Transaction[]
   createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  owner        Owner?        @relation(fields: [ownerId], references: [id])
 }
 
 model Transaction {
-  id            Int         @id @default(autoincrement())
-  createdAt     DateTime    @default(now())
-  amount        Decimal     @db.Decimal(12, 2)
-  method        String      
-  accountId     Int
-  account       Account     @relation(fields: [accountId], references: [id])
+  id        Int           @id @default(autoincrement())
+  amount    Decimal       @db.Decimal(12, 2)
+  method    PaymentMethod
+  createdAt DateTime      @default(now())
+
+  // Relations
   reservationId Int
   reservation   Reservation @relation(fields: [reservationId], references: [id])
+
+  accountId Int
+  account   Account @relation(fields: [accountId], references: [id])
 }
 
 // --- MANAGEMENT ---
@@ -120,13 +146,13 @@ model Note {
 }
 
 model PriceRule {
-  id            Int       @id @default(autoincrement())
-  name          String
-  startDate     DateTime
-  endDate       DateTime
-  price         Decimal   @db.Decimal(12, 2)
-  priority      Int       @default(1)
+  id        Int      @id @default(autoincrement())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  price     Decimal  @db.Decimal(12, 2)
+  priority  Int      @default(1)
 
-  roomTypeId    Int?
-  roomType      RoomType? @relation(fields: [roomTypeId], references: [id])
+  roomTypeId Int?
+  roomType   RoomType? @relation(fields: [roomTypeId], references: [id])
 }

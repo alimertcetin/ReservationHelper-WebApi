@@ -60,8 +60,9 @@ async function main() {
     where: { id: 1 },
     update: {},
     create: {
-      title: "Ziraat Bank Main",
+      displayName: "Ziraat Bank Main",
       iban: "TR00 0000 0000 0000 0000 0000 00",
+      type: "BANK",
       ownerId: owner.id,
       balance: 5000.00
     }
