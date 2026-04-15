@@ -3,11 +3,15 @@ import { prisma } from '../config/db.js';
 
 const router = express.Router();
 
-// Get all owners with their accounts
-router.get('/owners', async (req, res) => {
-  const owners = await prisma.owner.findMany({ include: { accounts: true } });
-  res.json(owners);
-});
+/*
+model Owner {
+  id        Int       @id @default(autoincrement())
+  name      String
+  address   String?
+  isActive  Boolean   @default(true) // Added
+  accounts  Account[]
+  createdAt DateTime  @default(now())
+}*/
 
 // Create a new Owner
 router.post('/owners', async (req, res) => {
@@ -16,10 +20,57 @@ router.post('/owners', async (req, res) => {
   res.status(201).json(owner);
 });
 
+// Get all owners with their accounts
+router.get('/owners', async (req, res) => {
+  const { includeInactive } = req.query;
+
+  const owners = await prisma.owner.findMany({ 
+    where: { includeInactive === 'true' ? undefined : true },
+    include: { 
+      accounts: {
+        where: { isActive: includeInactive === 'true' ? undefined : true, },
+        orderBy: { id:'asc'} }
+    },
+  });
+
+  res.json(owners);
+});
+
+router.get('/owners/:id', async (req, res) => {
+  try {
+    const result = await prisma.owner.findUnique({ 
+      where: { id: parseInt(req.params.id) },
+      include: { accounts: true }
+    });
+    res.json(result); 
+  }
+  catch (err) {
+    res.json({error:err}).status(500);
+  }
+});
+
+router.put('owners/:id', async (req, res) => {
+  try {
+    const { name, address } = res.body;
+    const result = await prisma.owner.update({
+      where: { id: parseInt(req.params.id)},
+      data: {
+        name,
+        address,
+      }
+    });
+    res.json(result);
+  }
+  catch (err) {
+    res.status(500).json({error:err});
+  }
+});
+
 router.delete('/owners/:id', async (req, res) => {
   try {
-    await prisma.owner.delete({
-      where: { id: parseInt(req.params.id) }
+    await prisma.owner.update({
+      where: { id: parseInt(req.params.id) },
+      data: {isActive: false}
     });
     res.status(204).send();
   } catch (err) {
@@ -27,14 +78,25 @@ router.delete('/owners/:id', async (req, res) => {
   }
 });
 
-// Get all Accounts (for your BookingPage dropdown)
-router.get('/', async (req, res) => {
-  const accounts = await prisma.account.findMany({
-    include: { owner: { select: { name: true } } }
-  });
-  res.json(accounts);
-  console.log(accounts);
-});
+/*
+model Account {
+  id          Int         @id @default(autoincrement())
+  ownerId     Int
+  displayName String // e.g., "Ziraat Bank Main"
+  type        AccountType @default(BANK)
+  isActive    Boolean     @default(true)
+  balance     Decimal     @default(0) @db.Decimal(12, 2)
+
+  // Bank Specific Details (Nullable for CASH accounts)
+  bankName String? // e.g., "Ziraat Bankası"
+  iban     String? @unique
+
+  // Relations
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  owner        Owner?        @relation(fields: [ownerId], references: [id])
+}*/
 
 // Create an Account for an Owner
 router.post('/', async (req, res) => {
@@ -61,6 +123,15 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Get all Accounts (for your BookingPage dropdown)
+router.get('/', async (req, res) => {
+  const accounts = await prisma.account.findMany({
+    where: { isActive: true },
+    include: { owner: { select: { name: true } } }
+  });
+  res.json(accounts);
+});
+
 router.put('/:id', async (req, res) => {
   try {
     const updatedAccount = await prisma.account.update({
@@ -76,12 +147,13 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await prisma.account.delete({
-      where: { id: parseInt(req.params.id) }
+    const result = await prisma.account.update({
+      where: { id: parseInt(req.params.id) },
+      data: { isActive: false }
     });
+    console.log(JSON.stringify(result, null, 2));
     res.status(204).send();
   } catch (err) {
-    console.error(err);
     res.status(404).json({ error: "Could not delete account. It might be linked to transactions." });
   }
 });
