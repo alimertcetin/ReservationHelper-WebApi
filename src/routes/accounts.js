@@ -25,7 +25,7 @@ router.get('/owners', async (req, res) => {
   const { includeInactive } = req.query;
 
   const owners = await prisma.owner.findMany({ 
-    where: { includeInactive === 'true' ? undefined : true },
+    where: { isActive: includeInactive === 'true' ? undefined : true },
     include: { 
       accounts: {
         where: { isActive: includeInactive === 'true' ? undefined : true, },
