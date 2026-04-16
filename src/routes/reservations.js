@@ -58,8 +58,8 @@ router.get('/recent', async (req, res) => {
       }
     });
     res.json(recent);
-  } catch (error) {
-    res.status(500).json({ error: "Could not load recent activity" });
+  } catch (err) {
+    res.status(500).json({ error: "Could not load recent activity: " + err });
   }
 });
 

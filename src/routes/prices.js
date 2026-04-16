@@ -81,70 +81,77 @@ router.post('/batch', async (req, res) => {
  */
 router.get('/suggest', async (req, res) => {
   try {
-    const { roomTypeId, startDate, endDate } = req.query;
+    const roomTypeId = parseInt(req.query.roomTypeId);
+    const { startDate, endDate, overrides } = req.query;
 
-    // 1. Strict Validation
-    if (!roomTypeId || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-      return res.status(400).json({ error: "Missing parameters or invalid date format (YYYY-MM-DD)." });
+    let parsedOverrides = [];
+    try {
+      parsedOverrides = overrides ? (typeof overrides === 'string' ? JSON.parse(overrides) : overrides) : [];
+    } catch (e) {
+      parsedOverrides = [];
     }
 
-    const start = new Date(startDate);
+    const [rules, policies] = await Promise.all([
+      prisma.priceRule.findMany({
+        where: { roomTypeId, startDate: { lte: new Date(endDate) }, endDate: { gte: new Date(startDate) } },
+        orderBy: { priority: 'desc' }
+      }),
+      prisma.pricePolicy.findMany({ where: { isActive: true } })
+    ]);
+
+    let stayTotal = 0;
+    let current = new Date(startDate);
     const end = new Date(endDate);
-    const rId = parseInt(roomTypeId);
 
-    if (start >= end) {
-      return res.status(400).json({ error: "Check-in must be before check-out." });
-    }
+    // Helper: Calculates flat vs percentage impact
+    const getImpact = (policy, currentVal) => {
+      const val = Number(policy.value);
+      if (policy.isPercentage) {
+        return currentVal * (val / 100);
+      }
+      return val;
+    };
 
-    // 2. Fetch all potentially relevant rules in one query
-    const rules = await prisma.priceRule.findMany({
-      where: {
-        roomTypeId: rId,
-        startDate: { lte: end },
-        endDate: { gte: start }
-      },
-      orderBy: { priority: 'desc' } // Higher priority rules checked first in .find()
-    });
-
-    let totalSuggestedPrice = 0;
-    const breakdown = [];
-    let current = new Date(start);
-
-    // 3. Day-by-Day Loop
+    // PHASE 1: Nightly Calculations (NIGHT & GUEST scopes)
     while (current < end) {
       const currentDateStr = current.toISOString().split('T')[0];
-      
-      // Find the highest priority rule for THIS specific day
-      const applicableRule = rules.find(rule => {
-        const ruleStart = new Date(rule.startDate).toISOString().split('T')[0];
-        const ruleEnd = new Date(rule.endDate).toISOString().split('T')[0];
-        return currentDateStr >= ruleStart && currentDateStr <= ruleEnd;
+      const rule = rules.find(r => {
+        const rS = new Date(r.startDate).toISOString().split('T')[0];
+        const rE = new Date(r.endDate).toISOString().split('T')[0];
+        return currentDateStr >= rS && currentDateStr <= rE;
       });
 
-      if (!applicableRule) {
-        return res.status(422).json({ 
-          error: `Pricing missing for date: ${currentDateStr}`,
-          missingDate: currentDateStr 
-        });
-      }
+      if (!rule) return res.status(422).json({ error: `No price for ${currentDateStr}` });
 
-      totalSuggestedPrice += Number(applicableRule.price);
-      breakdown.push({
-        date: currentDateStr,
-        price: applicableRule.price,
-        ruleName: applicableRule.name
+      let dailyTotal = Number(rule.price);
+
+      parsedOverrides.forEach(ov => {
+        const policy = policies.find(p => p.id === parseInt(ov.policyId));
+        if (!policy) return;
+
+        // Apply only if policy is scoped for Nightly or specific Guest variables
+        if (policy.scope === 'NIGHT' || policy.scope === 'GUEST') {
+          dailyTotal += getImpact(policy, dailyTotal);
+        }
       });
 
+      stayTotal += dailyTotal;
       current.setDate(current.getDate() + 1);
     }
 
-    res.json({
-      totalSuggestedPrice,
-      nights: breakdown.length,
-      breakdown
+    // PHASE 2: Stay Calculations (STAY scope)
+    // Applied once to the total sum (e.g., Cleaning Fee, Early Check-in, % Stay Discount)
+    parsedOverrides.forEach(ov => {
+      const policy = policies.find(p => p.id === parseInt(ov.policyId));
+      if (policy && policy.scope === 'STAY') {
+        stayTotal += getImpact(policy, stayTotal);
+      }
     });
 
+    res.json({ totalSuggestedPrice: parseFloat(stayTotal.toFixed(2)) });
+
   } catch (err) {
+    console.error("Suggest Error:", err);
     res.status(500).json({ error: err.message });
   }
 });

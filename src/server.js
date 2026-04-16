@@ -7,6 +7,7 @@ import accountRoutes from './routes/accounts.js';
 import guestRoutes from './routes/guests.js';
 import priceRoutes from './routes/prices.js';
 import roomTypesRoutes from './routes/roomTypes.js';
+import policiesRoutes from './routes/policies.js';
 import { connectDB, disconnectDB } from './config/db.js';
 
 dotenv.config();
@@ -23,6 +24,7 @@ app.use('/api/accounts', accountRoutes);
 app.use('/api/guests', guestRoutes);
 app.use('/api/prices', priceRoutes);
 app.use('/api/roomTypes', roomTypesRoutes);
+app.use('/api/policies', policiesRoutes);
 
 
 // See which prices are requested

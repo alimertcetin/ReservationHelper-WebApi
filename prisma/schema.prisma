@@ -83,21 +83,41 @@ model Reservation {
 }
 
 model RoomStay {
-  id            Int         @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   reservationId Int
   reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
 
-  roomTypeId Int?
-  roomType   RoomType? @relation(fields: [roomTypeId], references: [id])
+  roomTypeId    Int?
+  roomType      RoomType? @relation(fields: [roomTypeId], references: [id])
 
-  startDate DateTime
-  endDate   DateTime
-  adults    Int      @default(2)
-  children  Int      @default(0)
-  price     Decimal  @db.Decimal(12, 2)
+  startDate     DateTime
+  endDate       DateTime
+  adults        Int      @default(2)
+  children      Int      @default(0)
+  
+  // We should split overrides or keep them in one JSON block with metadata
+  // Format: [{ policyId: 1, guestKey: 'A1', scope: 'GUEST' }, { policyId: 2, scope: 'STAY' }]
+  overrides     Json?
+  
+  price         Decimal  @db.Decimal(12, 2)
 }
 
 // --- FINANCIALS ---
+
+model PricePolicy {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  type        String   @default("FIXED") // FIXED or ADJUST
+  isPercentage Boolean @default(false)
+
+  scope       String   @default("GUEST") // GUEST, NIGHT, or STAY
+  
+  value       Decimal  @db.Decimal(12, 2)
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime    @default(now())
+}
 
 model Account {
   id          Int         @id @default(autoincrement())
