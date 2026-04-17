@@ -176,3 +176,21 @@ model PriceRule {
   roomTypeId Int?
   roomType   RoomType? @relation(fields: [roomTypeId], references: [id])
 }
+
+// --- COMMUNICATION & SETTINGS ---
+
+model MessageTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // e.g., "Guest Welcome", "Staff New Booking"
+  content     String   @db.Text // The Handlebars string
+  category    String   @default("GUEST") // GUEST or STAFF
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemSetting {
+  id    Int    @id @default(autoincrement())
+  key   String @unique // e.g., "WHATSAPP_STAFF_GROUP_ID", "HOTEL_NAME"
+  value String @db.Text
+}
