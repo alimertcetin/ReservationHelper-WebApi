@@ -9,6 +9,7 @@ datasource db {
 enum AccountType {
   CASH
   BANK
+  VIRTUAL
 }
 
 enum PaymentMethod {

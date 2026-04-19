@@ -6,7 +6,8 @@ const router = express.Router();
 // The Single Source of Truth for restrictions
 const ACCOUNT_METHOD_MAP = {
   CASH: ['CASH'],
-  BANK: ['CREDIT_CARD', 'BANK_TRANSFER', 'ONLINE']
+  BANK: ['CREDIT_CARD', 'BANK_TRANSFER', 'ONLINE'],
+  VIRTUAL: ['CASH', 'CREDIT_CARD', 'BANK_TRANSFER', 'ONLINE']
 };
 
 /**
@@ -130,6 +131,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(result);
   } catch (error) {
+    console.log(error);
     res.status(500).json({ error: error.message });
   }
 });

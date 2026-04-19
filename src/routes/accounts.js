@@ -3,16 +3,6 @@ import { prisma } from '../config/db.js';
 
 const router = express.Router();
 
-/*
-model Owner {
-  id        Int       @id @default(autoincrement())
-  name      String
-  address   String?
-  isActive  Boolean   @default(true) // Added
-  accounts  Account[]
-  createdAt DateTime  @default(now())
-}*/
-
 // Create a new Owner
 router.post('/owners', async (req, res) => {
   const { name, address } = req.body;
@@ -45,13 +35,13 @@ router.get('/owners/:id', async (req, res) => {
     res.json(result); 
   }
   catch (err) {
-    res.json({error:err}).status(500);
+    res.status(500).json({error:err});
   }
 });
 
 router.put('owners/:id', async (req, res) => {
   try {
-    const { name, address } = res.body;
+    const { name, address } = req.body;
     const result = await prisma.owner.update({
       where: { id: parseInt(req.params.id)},
       data: {
@@ -77,26 +67,6 @@ router.delete('/owners/:id', async (req, res) => {
     res.status(400).json({ error: "Cannot delete owner with active accounts." });
   }
 });
-
-/*
-model Account {
-  id          Int         @id @default(autoincrement())
-  ownerId     Int
-  displayName String // e.g., "Ziraat Bank Main"
-  type        AccountType @default(BANK)
-  isActive    Boolean     @default(true)
-  balance     Decimal     @default(0) @db.Decimal(12, 2)
-
-  // Bank Specific Details (Nullable for CASH accounts)
-  bankName String? // e.g., "Ziraat Bankası"
-  iban     String? @unique
-
-  // Relations
-  transactions Transaction[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  owner        Owner?        @relation(fields: [ownerId], references: [id])
-}*/
 
 // Create an Account for an Owner
 router.post('/', async (req, res) => {

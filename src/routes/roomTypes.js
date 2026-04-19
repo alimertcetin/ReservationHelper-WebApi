@@ -3,19 +3,6 @@ import { prisma } from '../config/db.js';
 
 const router = express.Router();
 
-/*
-// --- ROOM TYPES ---
-
-model RoomType {
-  id          Int         @id @default(autoincrement())
-  name        String      @unique
-  description String?
-  capacity    Int         @default(2)
-  
-  roomStays   RoomStay[]
-  priceRules  PriceRule[]
-}*/
-
 router.get('/all', async (req, res) => {
   const { q } = req.query;
   const roomTypes = await prisma.roomType.findMany();
