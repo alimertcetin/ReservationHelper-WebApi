@@ -5,10 +5,15 @@ const router = express.Router();
 
 // GET all policies
 router.get('/', async (req, res) => {
-  const policies = await prisma.pricePolicy.findMany({
-    orderBy: { name: 'asc' }
-  });
-  res.json(policies);
+  try {
+    const policies = await prisma.pricePolicy.findMany({
+      orderBy: { id: 'asc' }
+    });
+    res.json(policies);
+  }
+  catch (err) {
+    res.status(500).json({error: err});
+  }
 });
 
 // POST new policy
@@ -19,15 +24,16 @@ router.post('/', async (req, res) => {
     const policy = await prisma.pricePolicy.create({
       data: { 
         name, 
+        description: description || null,
         type, 
-        value: parseFloat(value),
-        scope: scope || "GUEST", // Save the scope
         isPercentage: isPercentage || false, // Save the percentage flag
-        description: description || null 
+        scope: scope || "GUEST", // Save the scope
+        value: parseFloat(value),
       }
     });
     res.status(201).json(policy);
-  } catch (err) {
+  }
+  catch (err) {
     console.error(err);
     res.status(400).json({ error: "Policy name must be unique or data is invalid" });
   }
@@ -35,8 +41,13 @@ router.post('/', async (req, res) => {
 
 // DELETE policy
 router.delete('/:id', async (req, res) => {
-  await prisma.pricePolicy.delete({ where: { id: parseInt(req.params.id) } });
-  res.status(204).send();
+  try {
+  await prisma.pricePolicy.update({ where: { id: parseInt(req.params.id) }, data: { isActive: false } });
+    res.status(204).send();
+  }
+  catch (err) {
+    res.status(500).json({ error: err });
+  }
 });
 
 export default router;

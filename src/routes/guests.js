@@ -6,16 +6,21 @@ const router = express.Router();
 // Search guests by phone or name (for the search bar)
 router.get('/search', async (req, res) => {
   const { q } = req.query;
-  const guests = await prisma.guest.findMany({
-    where: {
-      OR: [
-        { phone: { contains: q } },
-        { firstName: { contains: q, mode: 'insensitive' } },
-        { lastName: { contains: q, mode: 'insensitive' } }
-      ]
-    }
-  });
-  res.json(guests);
+  try {
+    const guests = await prisma.guest.findMany({
+      where: {
+        OR: [
+          { phone: { contains: q } },
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } }
+        ]
+      }
+    });
+    res.json(guests);
+  }
+  catch (err) {
+    res.status(500).json({error: err});
+  }
 });
 
 export default router;
