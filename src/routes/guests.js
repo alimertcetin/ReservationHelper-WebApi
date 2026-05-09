@@ -3,7 +3,7 @@ import { prisma } from '../config/db.js';
 
 const router = express.Router();
 
-// Search guests by phone or name (for the search bar)
+// Search guests by phone or name
 router.get('/search', async (req, res) => {
   const { q } = req.query;
   try {

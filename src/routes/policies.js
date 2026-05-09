@@ -12,7 +12,8 @@ router.get('/', async (req, res) => {
     res.json(policies);
   }
   catch (err) {
-    res.status(500).json({error: err});
+    console.error(err);
+    res.status(500).json({ error: "Can't retrieve policies." });
   }
 });
 
@@ -26,8 +27,8 @@ router.post('/', async (req, res) => {
         name, 
         description: description || null,
         type, 
-        isPercentage: isPercentage || false, // Save the percentage flag
-        scope: scope || "GUEST", // Save the scope
+        isPercentage: isPercentage || false,
+        scope: scope || "GUEST",
         value: parseFloat(value),
       }
     });

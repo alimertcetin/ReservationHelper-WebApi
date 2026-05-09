@@ -5,7 +5,7 @@ const router = express.Router();
 
 // Create an Account
 router.post('/', async (req, res) => {
-  const { ownerId, displayName, type, isActive, details } = req.body;
+  const { ownerId, displayName, type, details } = req.body;
 
   try {
     const account = await prisma.account.create({
@@ -18,17 +18,24 @@ router.post('/', async (req, res) => {
     });
     res.json(account);
   } catch (err) {
+    console.error("Account POST error: " + err);
     res.status(500).json({ error: "Could not create account" });
   }
 });
 
 // Get all Accounts
 router.get('/', async (req, res) => {
-  const accounts = await prisma.account.findMany({
-    where: { isActive: true },
-    include: { owner: { select: { name: true } } }
-  });
-  res.json(accounts);
+  try {
+      const accounts = await prisma.account.findMany({
+        where: { isActive: true },
+        include: { owner: { select: { name: true } } }
+      });
+      res.json(accounts); 
+    }
+    catch(err) {
+      console.log("Account GET error: " + err);
+      res.status(500).json({ error: "Could not get accounts"} );
+    }
 });
 
 router.put('/:id', async (req, res) => {
@@ -40,18 +47,20 @@ router.put('/:id', async (req, res) => {
     res.json(updatedAccount);
   }
   catch(err) {
+    console.error(err);
     res.status(404).json({ error: "Account not found"} );
   }
 });
 
 router.delete('/:id', async (req, res) => {
   try {
-    const result = await prisma.account.update({
+    await prisma.account.update({
       where: { id: parseInt(req.params.id) },
       data: { isActive: false }
     });
     res.status(204).send();
   } catch (err) {
+    console.error(err);
     res.status(404).json({ error: "Could not delete account. It might be linked to transactions." });
   }
 });

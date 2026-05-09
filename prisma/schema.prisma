@@ -6,109 +6,107 @@ datasource db {
   provider = "postgresql"
 }
 
-
 // --- PEOPLE & ROLES ---
 
 model Staff {
-  id Int @id @default(autoincrement())
-  name String
-  role String @default("RECEPTION")
-  isActive Boolean @default(true) // Added
+  id       Int           @id @default(autoincrement())
+  name     String
+  role     String        @default("RECEPTION")
+  isActive Boolean       @default(true)
   bookings Reservation[]
-  notes Note[]
+  notes    Note[]
 }
 
 model Owner {
-  id Int @id @default(autoincrement())
-  name String
-  address String?
-  isActive Boolean @default(true) // Added
-  accounts Account[]
-  createdAt DateTime @default(now())
+  id        Int       @id @default(autoincrement())
+  name      String
+  address   String?
+  isActive  Boolean   @default(true)
+  accounts  Account[]
+  createdAt DateTime  @default(now())
 }
 
 model Guest {
-  id Int @id @default(autoincrement())
+  id        Int           @id @default(autoincrement())
   firstName String
-  lastName String
-  phone String @unique
-  email String?
-  bookings Reservation[]
+  lastName  String
+  phone     String
+  email     String?
+  bookings  Reservation[]
 }
 
 // --- ROOM TYPES ---
 
 model RoomType {
-  id Int @id @default(autoincrement())
-  name String @unique
-  description String?
-  capacity Int @default(2)
-  isActive Boolean @default(true) // Added
-  roomStays RoomStay[]
-  priceRules PriceRule[]
+  id             Int             @id @default(autoincrement())
+  name           String          @unique
+  description    String?
+  capacity       Int             @default(2)
+  isActive       Boolean         @default(true)
+  roomStays      RoomStay[]
+  roomTypePrices RoomTypePrice[]
 }
 
 // --- BOOKING LOGIC ---
 
 model Reservation {
-  id Int @id @default(autoincrement())
-  isActive Boolean @default(true) // Added
+  id        Int      @id @default(autoincrement())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   guestId Int
-  guest Guest @relation(fields: [guestId], references: [id])
-
   staffId Int
-  staff Staff @relation(fields: [staffId], references: [id])
 
-  // totalAmount Decimal @db.Decimal(12, 2) // this is the sum of rooms[].price
-  status String @default("PENDING")
+  // this is "USUALLY" the sum of rooms[].price but there might be extras
+  totalAmount Decimal @db.Decimal(12, 2)
+  status      String  @default("PENDING")
 
-  rooms RoomStay[]
+  guest        Guest         @relation(fields: [guestId], references: [id])
+  staff        Staff         @relation(fields: [staffId], references: [id])
+  rooms        RoomStay[]
   transactions Transaction[]
-  notes Note[]
+  notes        Note[]
 }
 
 model RoomStay {
-  id Int @id @default(autoincrement())
+  id            Int @id @default(autoincrement())
   reservationId Int
-  roomTypeId Int
+  roomTypeId    Int
 
   startDate DateTime
-  endDate DateTime
-  adults Int @default(2)
-  children Int @default(0)
-  
+  endDate   DateTime
+  adults    Int      @default(2)
+  children  Int      @default(0)
+
   // We should split overrides or keep them in one JSON block with metadata
   // Format: [{ policyId: 1, guestKey: 'A1', scope: 'GUEST' }, { policyId: 2, scope: 'STAY' }]
-  policies Json?
-  price Decimal @db.Decimal(12, 2)
+  policies    Json?
+  price       Decimal     @db.Decimal(12, 2)
   reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  roomType RoomType @relation(fields: [roomTypeId], references: [id])
+  roomType    RoomType    @relation(fields: [roomTypeId], references: [id])
 }
 
 // --- FINANCIALS ---
 
 model PricePolicy {
-  id Int @id @default(autoincrement())
-  name String @unique
-  description String?
-  type String @default("FIXED") // FIXED or ADJUST
+  id           Int     @id @default(autoincrement())
+  name         String  @unique
+  description  String?
+  type         String  @default("FIXED") // FIXED or ADJUST
   isPercentage Boolean @default(false)
 
-  scope String @default("GUEST") // GUEST, NIGHT, or STAY
-  value Decimal @db.Decimal(12, 2)
-  isActive Boolean @default(true)
+  scope     String   @default("GUEST") // GUEST, NIGHT, or STAY
+  value     Decimal  @db.Decimal(12, 2)
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 }
 
 model Account {
-  id Int @id @default(autoincrement())
-  ownerId Int
+  id          Int     @id @default(autoincrement())
+  ownerId     Int
   displayName String // e.g., "Ziraat Bank Main"
-  type String @default("BANK")
-  isActive Boolean @default(true)
+  type        String  @default("BANK")
+  isActive    Boolean @default(true)
 
   // Bank Specific Details (Nullable for CASH accounts)
   // Iban and other similiar fields will be stored in here
@@ -119,54 +117,57 @@ model Account {
 
   // Relations
   transactions Transaction[]
-  owner Owner @relation(fields: [ownerId], references: [id])
+  owner        Owner         @relation(fields: [ownerId], references: [id])
 }
 
 model Transaction {
-  id Int @id @default(autoincrement())
-  amount Decimal @db.Decimal(12, 2)
-  method String
+  id        Int      @id @default(autoincrement())
+  amount    Decimal  @db.Decimal(12, 2)
+  method    String
   createdAt DateTime @default(now())
 
   // Relations
   reservationId Int
-  reservation Reservation   @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
 
   accountId Int
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 }
 
 // --- MANAGEMENT ---
 
 model Note {
-  id Int @id @default(autoincrement())
-  content String @db.Text
-  isPinned Boolean @default(false)
-  createdAt DateTime @default(now())
-  staffId Int 
-  staff Staff @relation(fields: [staffId], references: [id])
+  id            Int          @id @default(autoincrement())
+  content       String       @db.Text
+  isPinned      Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  staffId       Int
+  staff         Staff        @relation(fields: [staffId], references: [id])
+  reservation   Reservation? @relation(fields: [reservationId], references: [id])
+  reservationId Int?
 }
 
+// A room/price connection that contains the dates
 model PriceRule {
-  id Int @id @default(autoincrement())
-  name String
+  id        Int      @id @default(autoincrement())
+  name      String
   startDate DateTime
-  endDate DateTime
-  priority Int @default(1)
+  endDate   DateTime
+  priority  Int      @default(1)
 
   // One rule can apply to many RoomTypes via this join table
   roomTypePrices RoomTypePrice[]
 }
 
 model RoomTypePrice {
-  id Int @id @default(autoincrement())
-  price Decimal @db.Decimal(12, 2)
+  id        Int     @id @default(autoincrement())
+  price     Decimal @db.Decimal(12, 2)
   overrides Json? // Format: [{ day: 5, price: 1200 }, { day: 6, price: 1200 }]
-  
-  roomTypeId Int
+
+  roomTypeId  Int
   priceRuleId Int
 
-  roomType RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  roomType  RoomType  @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
   priceRule PriceRule @relation(fields: [priceRuleId], references: [id], onDelete: Cascade)
 
   @@unique([roomTypeId, priceRuleId]) // Prevents double pricing a room in one rule
@@ -175,17 +176,17 @@ model RoomTypePrice {
 // --- COMMUNICATION & SETTINGS ---
 
 model MessageTemplate {
-  id Int @id @default(autoincrement())
-  name String @unique // e.g., "Guest Welcome", "Staff New Booking"
-  content String @db.Text // The Handlebars string
-  category String @default("GUEST") // GUEST or STAFF
-  isActive Boolean @default(true)
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // e.g., "Guest Welcome", "Staff New Booking"
+  content   String   @db.Text // The Handlebars string
+  category  String   @default("GUEST") // GUEST or STAFF
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model SystemSetting {
-  id Int @id @default(autoincrement())
-  key String @unique // e.g., "WHATSAPP_STAFF_GROUP_ID", "HOTEL_NAME"
+  id    Int    @id @default(autoincrement())
+  key   String @unique // e.g., "WHATSAPP_STAFF_GROUP_ID", "HOTEL_NAME"
   value String @db.Text
 }

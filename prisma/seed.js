@@ -10,25 +10,48 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log("🌱 Seeding database...");
 
-  // 1. Create Room Types (Refactored to individual upserts)
+  // ---------------------------------------------------
+  // 1. ROOM TYPES
+  // ---------------------------------------------------
+
   const roomTypesData = [
-    { name: "Standard Room", capacity: 2, description: "Comfortable room with a city view." },
-    { name: "Deluxe Room", capacity: 2, description: "Pool View." },
-    { name: "Test Room", capacity: 4, description: "Test View." }
+    {
+      name: "Standard Room",
+      capacity: 2,
+      description: "Comfortable room with a city view."
+    },
+    {
+      name: "Deluxe Room",
+      capacity: 3,
+      description: "Spacious room with pool view."
+    },
+    {
+      name: "Family Suite",
+      capacity: 5,
+      description: "Large suite suitable for families."
+    }
   ];
 
   const createdRoomTypes = [];
+
   for (const rt of roomTypesData) {
-    const type = await prisma.roomType.upsert({
+    const roomType = await prisma.roomType.upsert({
       where: { name: rt.name },
-      update: {},
+      update: {
+        capacity: rt.capacity,
+        description: rt.description
+      },
       create: rt
     });
-    createdRoomTypes.push(type);
+
+    createdRoomTypes.push(roomType);
   }
 
-  // 2. Create a Staff Member
-  const staff = await prisma.staff.upsert({
+  // ---------------------------------------------------
+  // 2. STAFF
+  // ---------------------------------------------------
+
+  const adminStaff = await prisma.staff.upsert({
     where: { id: 1 },
     update: {},
     create: {
@@ -37,81 +60,331 @@ async function main() {
     }
   });
 
-  // 3. Create an Account Owner
+  await prisma.staff.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
+      name: "Ayşe Kaya",
+      role: "RECEPTION"
+    }
+  });
+
+  // ---------------------------------------------------
+  // 3. OWNERS
+  // ---------------------------------------------------
+
   const owner = await prisma.owner.upsert({
     where: { id: 1 },
     update: {},
     create: {
       name: "Hotel Management Group",
-      address: "Istanbul, Turkey"
+      address: "Istanbul, Türkiye"
     }
   });
 
-  // 4. Create a Bank Account
-  await prisma.account.upsert({
+  // ---------------------------------------------------
+  // 4. ACCOUNTS
+  // ---------------------------------------------------
+
+  const bankAccount = await prisma.account.upsert({
     where: { id: 1 },
     update: {},
     create: {
-      displayName: "Ziraat Bank Main",
-      iban: "TR00 0000 0000 0000 0000 0000 00",
-      type: "BANK",
       ownerId: owner.id,
-      balance: 5000.00
+      displayName: "Ziraat Bank Main",
+      type: "BANK",
+      details: {
+        iban: "TR00 0000 0000 0000 0000 0000 00",
+        branch: "Kadıköy"
+      }
     }
   });
 
-  // 5. Create Price Rules
-  await prisma.priceRule.createMany({
-    data: [
-      { 
-        name: "Standard Rate", 
-        startDate: new Date("2026-01-01"), 
-        endDate: new Date("2030-12-31"), 
-        price: 1500, 
-        roomTypeId: createdRoomTypes[0].id,
-        priority: 1 
-      },
-      { 
-        name: "Summer Peak", 
-        startDate: new Date("2026-06-01"), 
-        endDate: new Date("2026-08-31"), 
-        price: 2500, 
-        roomTypeId: createdRoomTypes[0].id,
-        priority: 10 
-      }
-    ],
-    skipDuplicates: true
-  });
-
-  // 6. Create Initial System Settings
-  await prisma.systemSetting.upsert({
-    where: { key: "WHATSAPP_STAFF_GROUP_ID" },
+  const cashAccount = await prisma.account.upsert({
+    where: { id: 2 },
     update: {},
     create: {
-      key: "WHATSAPP_STAFF_GROUP_ID",
-      value: "1234567890@g.us" // Placeholder
+      ownerId: owner.id,
+      displayName: "Hotel Cash Register",
+      type: "CASH"
     }
   });
 
-  // 7. Create Default Message Templates
+  // ---------------------------------------------------
+  // 5. PRICE POLICIES
+  // ---------------------------------------------------
+
+  const policies = [
+    {
+      name: "Extra Adult Fee",
+      description: "Additional charge per adult guest",
+      type: "ADJUST",
+      isPercentage: false,
+      scope: "GUEST",
+      value: 500
+    },
+    {
+      name: "Child Discount",
+      description: "Discount for children",
+      type: "ADJUST",
+      isPercentage: true,
+      scope: "GUEST",
+      value: -10
+    },
+    {
+      name: "Weekly Stay Discount",
+      description: "Discount for long stays",
+      type: "ADJUST",
+      isPercentage: true,
+      scope: "STAY",
+      value: -15
+    }
+  ];
+
+  for (const policy of policies) {
+    await prisma.pricePolicy.upsert({
+      where: { name: policy.name },
+      update: {
+        description: policy.description,
+        type: policy.type,
+        isPercentage: policy.isPercentage,
+        scope: policy.scope,
+        value: policy.value
+      },
+      create: policy
+    });
+  }
+
+  // ---------------------------------------------------
+  // 6. PRICE RULES
+  // ---------------------------------------------------
+
+  const standardRule = await prisma.priceRule.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      name: "Standard Season 2026",
+      startDate: new Date("2026-01-01"),
+      endDate: new Date("2026-12-31"),
+      priority: 1
+    }
+  });
+
+  const summerRule = await prisma.priceRule.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
+      name: "Summer Peak 2026",
+      startDate: new Date("2026-06-01"),
+      endDate: new Date("2026-08-31"),
+      priority: 10
+    }
+  });
+
+  // ---------------------------------------------------
+  // 7. ROOM TYPE PRICES
+  // ---------------------------------------------------
+
+  const roomTypePrices = [
+    {
+      roomTypeId: createdRoomTypes[0].id,
+      priceRuleId: standardRule.id,
+      price: 1500
+    },
+    {
+      roomTypeId: createdRoomTypes[1].id,
+      priceRuleId: standardRule.id,
+      price: 2200
+    },
+    {
+      roomTypeId: createdRoomTypes[2].id,
+      priceRuleId: standardRule.id,
+      price: 3500
+    },
+    {
+      roomTypeId: createdRoomTypes[0].id,
+      priceRuleId: summerRule.id,
+      price: 2500,
+      overrides: [
+        { day: 5, price: 2800 },
+        { day: 6, price: 3000 }
+      ]
+    }
+  ];
+
+  for (const item of roomTypePrices) {
+    await prisma.roomTypePrice.upsert({
+      where: {
+        roomTypeId_priceRuleId: {
+          roomTypeId: item.roomTypeId,
+          priceRuleId: item.priceRuleId
+        }
+      },
+      update: {
+        price: item.price,
+        overrides: item.overrides || null
+      },
+      create: item
+    });
+  }
+
+  // ---------------------------------------------------
+  // 8. GUEST
+  // ---------------------------------------------------
+
+  const guest = await prisma.guest.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      firstName: "Mehmet",
+      lastName: "Yılmaz",
+      phone: "+90 555 111 22 33",
+      email: "mehmet@example.com"
+    }
+  });
+
+  // ---------------------------------------------------
+  // 9. RESERVATION
+  // ---------------------------------------------------
+
+  const reservation = await prisma.reservation.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      guestId: guest.id,
+      staffId: adminStaff.id,
+      totalAmount: 4500,
+      status: "CONFIRMED"
+    }
+  });
+
+  // ---------------------------------------------------
+  // 10. ROOM STAY
+  // ---------------------------------------------------
+
+  await prisma.roomStay.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      reservationId: reservation.id,
+      roomTypeId: createdRoomTypes[0].id,
+      startDate: new Date("2026-07-10"),
+      endDate: new Date("2026-07-13"),
+      adults: 2,
+      children: 1,
+      price: 4500,
+      policies: [
+        {
+          policyId: 1,
+          scope: "GUEST",
+          guestKey: "A1"
+        }
+      ]
+    }
+  });
+
+  // ---------------------------------------------------
+  // 11. TRANSACTIONS
+  // ---------------------------------------------------
+
+  await prisma.transaction.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      reservationId: reservation.id,
+      accountId: bankAccount.id,
+      amount: 2000,
+      method: "CREDIT_CARD"
+    }
+  });
+
+  await prisma.transaction.upsert({
+    where: { id: 2 },
+    update: {},
+    create: {
+      reservationId: reservation.id,
+      accountId: cashAccount.id,
+      amount: 2500,
+      method: "CASH"
+    }
+  });
+
+  // ---------------------------------------------------
+  // 12. NOTES
+  // ---------------------------------------------------
+
+  await prisma.note.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      content: "VIP guest. Prefers quiet rooms.",
+      isPinned: true,
+      staffId: adminStaff.id
+    }
+  });
+
+  // ---------------------------------------------------
+  // 13. SYSTEM SETTINGS
+  // ---------------------------------------------------
+
+  const settings = [
+    {
+      key: "HOTEL_NAME",
+      value: "Grand Bosphorus Hotel"
+    },
+    {
+      key: "WHATSAPP_STAFF_GROUP_ID",
+      value: "1234567890@g.us"
+    },
+    {
+      key: "DEFAULT_CURRENCY",
+      value: "TRY"
+    }
+  ];
+
+  for (const setting of settings) {
+    await prisma.systemSetting.upsert({
+      where: { key: setting.key },
+      update: {
+        value: setting.value
+      },
+      create: setting
+    });
+  }
+
+  // ---------------------------------------------------
+  // 14. MESSAGE TEMPLATES
+  // ---------------------------------------------------
+
   const templates = [
     {
       name: "Guest Welcome",
       category: "GUEST",
-      content: "Hello {{name}}, welcome to our hotel! Your booking for {{total}}₺ is confirmed. Balance: {{balance}}₺."
+      content:
+        "Hello {{name}}, welcome to our hotel! Your reservation is confirmed."
+    },
+    {
+      name: "Payment Reminder",
+      category: "GUEST",
+      content:
+        "Dear {{name}}, your remaining balance is {{balance}}₺."
     },
     {
       name: "New Booking Notification",
       category: "STAFF",
-      content: "🛎️ New Booking! Guest: {{name}} {{surname}}. Total: {{total}}₺. Handled by: {{staffName}}."
+      content:
+        "🛎️ New Booking! Guest: {{name}} {{surname}}. Total: {{total}}₺."
     }
   ];
 
-  for (const t of templates) {
+  for (const template of templates) {
     await prisma.messageTemplate.upsert({
-      where: { name: t.name },
-      update: { content: t.content, category: t.category },
-      create: t
+      where: { name: template.name },
+      update: {
+        content: template.content,
+        category: template.category
+      },
+      create: template
     });
   }
 

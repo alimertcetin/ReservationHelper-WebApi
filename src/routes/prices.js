@@ -4,150 +4,9 @@ import { prisma } from '../config/db.js';
 const router = express.Router();
 
 /**
- * PUT /sync
- * Replaces the entire pricing strategy.
- */
-router.put('/sync', async (req, res) => {
-  const { rules } = req.body; // Array of { name, startDate, endDate, priority, pricing: [...] }
-
-  try {
-    await prisma.$transaction(async (tx) => {
-      // 1. Wipe existing to maintain a clean "Stack"
-      await tx.priceRule.deleteMany({});
-
-      // 2. Create Rules and Nested Room Prices
-      for (const rule of rules) {
-        await tx.priceRule.create({
-          data: {
-            name: rule.name,
-            startDate: new Date(rule.startDate),
-            endDate: new Date(rule.endDate),
-            priority: rule.priority,
-            roomTypePrices: {
-              create: rule.pricing.map(p => ({
-                roomTypeId: p.roomTypeId,
-                price: p.price,
-                overrides: p.overrides // Now stored per RoomType
-              }))
-            }
-          }
-        });
-      }
-    });
-
-    res.json({ message: "Pricing stack synchronized successfully" });
-  } catch (err) {
-    console.error("Sync Error:", err);
-    res.status(500).json({ error: "Failed to sync price rules." });
-  }
-});
-
-/**
- * GET /suggest
- * Calculates stay total by checking Base Price vs. Day-of-Week Overrides
- */
-router.get('/suggest', async (req, res) => {
-  try {
-    const roomTypeId = parseInt(req.query.roomTypeId);
-    const { startDate, endDate, overrides } = req.query;
-
-    if (!roomTypeId || !startDate || !endDate) {
-      return res.status(400).json({ error: "Missing required parameters" });
-    }
-
-    // Parse guest-selected policies (e.g., extra bed, breakfast)
-    let parsedGuestPolicies = [];
-    try {
-      parsedGuestPolicies = overrides ? (typeof overrides === 'string' ? JSON.parse(overrides) : overrides) : [];
-    } catch (e) { parsedGuestPolicies = []; }
-
-    // Fetch applicable rules and active global policies
-    const [rules, globalPolicies] = await Promise.all([
-      prisma.priceRule.findMany({
-        where: {
-          startDate: { lte: new Date(endDate) },
-          endDate: { gte: new Date(startDate) },
-          roomTypePrices: { some: { roomTypeId } }
-        },
-        include: {
-          roomTypePrices: { where: { roomTypeId } }
-        },
-        orderBy: { priority: 'desc' }
-      }),
-      prisma.pricePolicy.findMany({ where: { isActive: true } })
-    ]);
-
-    let stayTotal = 0;
-    let current = new Date(startDate);
-    const end = new Date(endDate);
-
-    const getImpact = (policy, currentVal) => {
-      const val = Number(policy.value);
-      return policy.isPercentage ? currentVal * (val / 100) : val;
-    };
-
-    // --- NIGHTLY CALCULATION LOOP ---
-    while (current < end) {
-      const currentDateStr = current.toISOString().split('T')[0];
-      const currentDayOfWeek = current.getDay(); // 0 (Sun) to 6 (Sat)
-
-      // Find highest priority rule for this day
-      const rule = rules.find(r => {
-        const rS = new Date(r.startDate).toISOString().split('T')[0];
-        const rE = new Date(r.endDate).toISOString().split('T')[0];
-        return currentDateStr >= rS && currentDateStr <= rE;
-      });
-
-      if (!rule || !rule.roomTypePrices[0]) {
-        return res.status(422).json({ error: `No price defined for ${currentDateStr}` });
-      }
-
-      const rtp = rule.roomTypePrices[0];
-      let basePrice = Number(rtp.price);
-
-      // Check for Day-of-Week Overrides
-      if (rtp.overrides && Array.isArray(rtp.overrides)) {
-        const dayOverride = rtp.overrides.find(o => o.day === currentDayOfWeek);
-        if (dayOverride) {
-          basePrice = Number(dayOverride.price);
-        }
-      }
-
-      let nightlyTotal = basePrice;
-
-      // Apply Nightly/Guest Policies (Extra persons, etc.)
-      parsedGuestPolicies.forEach(ov => {
-        const policy = globalPolicies.find(p => p.id === parseInt(ov.policyId));
-        if (policy && (policy.scope === 'NIGHT' || policy.scope === 'GUEST')) {
-          nightlyTotal += getImpact(policy, nightlyTotal);
-        }
-      });
-
-      stayTotal += nightlyTotal;
-      current.setDate(current.getDate() + 1);
-    }
-
-    // --- FINAL STAY POLICIES ---
-    parsedGuestPolicies.forEach(ov => {
-      const policy = globalPolicies.find(p => p.id === parseInt(ov.policyId));
-      if (policy && policy.scope === 'STAY') {
-        stayTotal += getImpact(policy, stayTotal);
-      }
-    });
-
-    res.json({ 
-      totalSuggestedPrice: parseFloat(stayTotal.toFixed(2)),
-      currency: "TRY" 
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * GET /all
- * Returns the full stack for the admin panel
+ * GET /api/prices/all
+ * Description: Fetches the entire pricing stack, including room-specific prices and their JSON overrides.
+ * Example Usage: GET http://localhost:3000/api/prices/all
  */
 router.get('/all', async (req, res) => {
   try {
@@ -157,16 +16,212 @@ router.get('/all', async (req, res) => {
           include: { roomType: true }
         }
       },
-      orderBy: { priority: 'desc' }
+      orderBy: { priority: 'asc' }
     });
     res.json(rules);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Fetch Rules Error:", err);
+    res.status(500).json({ error: "Failed to fetch pricing rules." });
   }
 });
 
 /**
- * DELETE /:id
+ * PUT /api/prices/sync
+ * Description: Wipes the current pricing rules and replaces them with a new stack. 
+ * Handles nested creation of RoomTypePrice records with JSON overrides.
+ * Example Usage:
+ * PUT http://localhost:3000/api/prices/sync
+ * Body: {
+ *   "rules": [
+ *     {
+ *       "name": "Summer Season",
+ *       "startDate": "2026-06-01",
+ *       "endDate": "2026-08-31",
+ *       "priority": 10,
+ *       "pricing": [
+ *         { 
+ *           "roomTypeId": 1, 
+ *           "price": 2000, 
+ *           "overrides": [
+ *             { "type": "weekday", "key": 6, "price": 2500 },
+ *             { "type": "date", "key": "2026-07-15", "price": 5000 }
+ *           ] 
+ *         }
+ *       ]
+ *     }
+ *   ]
+ * }
+ */
+router.put('/sync', async (req, res) => {
+  const { rules } = req.body;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Delete all existing rules (Cascade deletes RoomTypePrice automatically via Prisma schema)
+      await tx.priceRule.deleteMany({});
+
+      // 2. Create the new stack
+      const createdRules = [];
+      for (const rule of rules) {
+        const newRule = await tx.priceRule.create({
+          data: {
+            name: rule.name,
+            startDate: new Date(rule.startDate),
+            endDate: new Date(rule.endDate),
+            priority: rule.priority,
+            roomTypePrices: {
+              create: rule.pricing.map(p => ({
+                roomTypeId: p.roomTypeId,
+                price: p.price,
+                overrides: p.overrides || [] // Array of {type, key, price}
+              }))
+            }
+          }
+        });
+        createdRules.push(newRule);
+      }
+      return createdRules;
+    });
+
+    res.json({ message: "Pricing synchronized", count: result.length });
+  } catch (err) {
+    console.error("Sync Error:", err);
+    res.status(500).json({ error: "Failed to synchronize pricing rules." });
+  }
+});
+
+/**
+ * GET /api/prices/suggest
+ * Description: Calculates a detailed price breakdown and total suggested amount.
+ * Example Usage: 
+ * GET /api/prices/suggest?roomTypeId=1&startDate=2026-06-01&endDate=2026-06-05&policies=[{"policyId":3,"guestKey":"A1"},{"policyId":5}]
+ */
+router.get('/suggest', async (req, res) => {
+  const { roomTypeId, startDate, endDate, policies: policiesJson } = req.query;
+
+  if (!roomTypeId || !startDate || !endDate) {
+    return res.status(400).json({ error: "Missing roomTypeId, startDate, or endDate" });
+  }
+
+  try {
+    const rId = parseInt(roomTypeId);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Parse applied policies from frontend (if any)
+    let appliedOverlays = [];
+    try {
+      appliedOverlays = policiesJson ? JSON.parse(policiesJson) : [];
+    } catch (e) {
+      appliedOverlays = [];
+    }
+
+    // 1. Fetch relevant Data: Rules and Policy Definitions
+    const [rules, dbPolicies] = await Promise.all([
+      prisma.priceRule.findMany({
+        where: {
+          startDate: { lte: end },
+          endDate: { gte: start },
+          roomTypePrices: { some: { roomTypeId: rId } }
+        },
+        include: {
+          roomTypePrices: { where: { roomTypeId: rId } }
+        },
+        orderBy: { priority: 'asc' }
+      }),
+      prisma.pricePolicy.findMany({ where: { isActive: true } })
+    ]);
+
+    let totalAmount = 0;
+    const breakdown = [];
+    let current = new Date(start);
+
+    // 2. Nightly Loop
+    while (current < end) {
+      const dateStr = current.toISOString().split('T')[0];
+      const dayOfWeek = current.getDay();
+
+      // Find highest priority rule for this specific date
+      const activeRule = rules.find(r => {
+        const rStart = new Date(r.startDate).toISOString().split('T')[0];
+        const rEnd = new Date(r.endDate).toISOString().split('T')[0];
+        return dateStr >= rStart && dateStr <= rEnd;
+      });
+
+      if (!activeRule) {
+        return res.status(422).json({ error: `No base price defined for ${dateStr}` });
+      }
+
+      const roomConfig = activeRule.roomTypePrices[0];
+      
+      // Step A: Calculate Base Night Price (including Date/Weekday Overrides in JSON)
+      let nightlyBase = Number(roomConfig.price);
+      if (roomConfig.overrides && Array.isArray(roomConfig.overrides)) {
+        const dateOv = roomConfig.overrides.find(o => o.type === 'date' && o.key === dateStr);
+        const weekOv = roomConfig.overrides.find(o => o.type === 'weekday' && o.key === dayOfWeek);
+        if (dateOv) nightlyBase = Number(dateOv.price);
+        else if (weekOv) nightlyBase = Number(weekOv.price);
+      }
+
+      let nightlyTotal = nightlyBase;
+      const appliedOnThisNight = [];
+
+      // Step B: Apply Dynamic Policies (GUEST and NIGHT scopes)
+      appliedOverlays.forEach(overlay => {
+        const policy = dbPolicies.find(p => p.id === overlay.policyId);
+        if (!policy) return;
+
+        // Apply if scope is Per Guest or Per Night
+        if (policy.scope === 'GUEST' || policy.scope === 'NIGHT') {
+          const impact = policy.isPercentage 
+            ? nightlyBase * (Number(policy.value) / 100) 
+            : Number(policy.value);
+          
+          nightlyTotal += impact;
+          appliedOnThisNight.push({ name: policy.name, impact });
+        }
+      });
+
+      totalAmount += nightlyTotal;
+      breakdown.push({
+        date: dateStr,
+        base: nightlyBase,
+        total: nightlyTotal,
+        adjustments: appliedOnThisNight
+      });
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    // Step C: Apply Stay-wide Policies (STAY scope)
+    appliedOverlays.forEach(overlay => {
+      const policy = dbPolicies.find(p => p.id === overlay.policyId);
+      if (policy && policy.scope === 'STAY') {
+        const impact = policy.isPercentage 
+          ? totalAmount * (Number(policy.value) / 100) 
+          : Number(policy.value);
+        
+        totalAmount += impact;
+        // Stay policies don't belong to a specific night breakdown, 
+        // they are added to the final suggested total.
+      }
+    });
+
+    res.json({
+      totalSuggestedPrice: parseFloat(totalAmount.toFixed(2)),
+      breakdown
+    });
+
+  } catch (err) {
+    console.error("Suggest Engine Error:", err);
+    res.status(500).json({ error: "Failed to calculate suggested price" });
+  }
+});
+
+/**
+ * DELETE /api/prices/:id
+ * Description: Deletes a specific pricing rule.
+ * Example Usage: DELETE http://localhost:3000/api/prices/15
  */
 router.delete('/:id', async (req, res) => {
   try {
@@ -175,7 +230,8 @@ router.delete('/:id', async (req, res) => {
     });
     res.status(204).send();
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Delete Rule Error:", err);
+    res.status(500).json({ error: "Failed to delete pricing rule." });
   }
 });
 

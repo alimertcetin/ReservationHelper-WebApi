@@ -6,44 +6,59 @@ const router = express.Router();
 // Create a new Owner
 router.post('/owners', async (req, res) => {
   const { name, address } = req.body;
-  const owner = await prisma.owner.create({ data: { name, address } });
-  res.status(201).json(owner);
+  try {
+    const owner = await prisma.owner.create({ data: { name, address } });
+    res.status(201).json(owner);
+  }
+  catch (err) {
+    console.error(err);
+    res.status(500).json({error:"Can't create owner."});
+  }
 });
 
 // Get all owners with their accounts
 router.get('/owners', async (req, res) => {
   const { includeInactive } = req.query;
 
-  const owners = await prisma.owner.findMany({ 
-    where: { isActive: includeInactive === 'true' ? undefined : true },
-    include: { 
-      accounts: {
-        where: { isActive: includeInactive === 'true' ? undefined : true, },
-        orderBy: { id:'asc'} }
-    },
-  });
+  try {
+    const owners = await prisma.owner.findMany({ 
+      where: { isActive: includeInactive === 'true' ? undefined : true },
+      include: { 
+        accounts: {
+          where: { isActive: includeInactive === 'true' ? undefined : true, },
+          orderBy: { id:'asc'} }
+      },
+    });
 
-  res.json(owners);
+    res.json(owners);
+  }
+  catch (error) {
+    console.error(error);
+    res.status(500).json({error:"Can't get owners"});
+  }
 });
 
 router.get('/owners/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
   try {
     const result = await prisma.owner.findUnique({ 
-      where: { id: parseInt(req.params.id) },
+      where: { id: id },
       include: { accounts: true }
     });
     res.json(result); 
   }
   catch (err) {
-    res.status(500).json({error:err});
+    console.error(err);
+    res.status(500).json({error:"Can't get owner with id: " + id});
   }
 });
 
 router.put('owners/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
   try {
     const { name, address } = req.body;
     const result = await prisma.owner.update({
-      where: { id: parseInt(req.params.id)},
+      where: { id: id},
       data: {
         name,
         address,
@@ -52,19 +67,22 @@ router.put('owners/:id', async (req, res) => {
     res.json(result);
   }
   catch (err) {
-    res.status(500).json({error:err});
+    console.error(err);
+    res.status(500).json({error:"Can't update owner with id: " + id});
   }
 });
 
 router.delete('/owners/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
   try {
     await prisma.owner.update({
-      where: { id: parseInt(req.params.id) },
-      data: {isActive: false}
+      where: { id: id },
+      data: { isActive: false }
     });
     res.status(204).send();
   } catch (err) {
-    res.status(400).json({ error: "Cannot delete owner with active accounts." });
+    console.error(err);
+    res.status(400).json({ error: "Cannot delete owner with id: " + id });
   }
 });
 

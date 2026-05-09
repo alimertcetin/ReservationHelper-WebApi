@@ -3,23 +3,14 @@ import { prisma } from '../config/db.js';
 
 const router = express.Router();
 
-// The Single Source of Truth for restrictions
-const ACCOUNT_METHOD_MAP = {
-  CASH: ['CASH'],
-  BANK: ['CREDIT_CARD', 'BANK_TRANSFER', 'ONLINE'],
-  VIRTUAL: ['CASH', 'CREDIT_CARD', 'BANK_TRANSFER', 'ONLINE']
-};
-
 /**
  * 1. GET: Fetch by Date Range
- * Usage: GET /api/reservations?start=2026-04-01&end=2026-04-30&includeInactive=false
+ * Usage: GET /api/reservations?start=2026-04-01&end=2026-04-30
  */
 router.get('/', async (req, res) => {
-  const { start, end, includeInactive } = req.query;
+  const { start, end } = req.query;
   try {
-    const filters = {
-      isActive: includeInactive === 'true' ? undefined : true,
-    };
+    const filters = { };
 
     if (start && end) {
       filters.createdAt = {
@@ -39,19 +30,26 @@ router.get('/', async (req, res) => {
     });
     res.json(reservations);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Failed to fetch reservations" });
   }
 });
 
 /**
- * 2. GET: Recent Activity (limit 10)
- * Usage: GET /api/reservations/recent
+ * 2. GET: Recent Activity (with Pagination)
+ * Usage: GET /api/reservations/recent?page=2
  */
 router.get('/recent', async (req, res) => {
+  const { page = 1, limit = 10 } = req.query;
+  const p = Math.max(1, parseInt(page));
+  const l = Math.max(1, parseInt(limit));
+
   try {
     const recent = await prisma.reservation.findMany({
-      where: { isActive: true },
-      take: 10,
+      // Adjusting your filter: Schema uses status/isActive? 
+      // Ensure the 'where' matches your model fields
+      take: l,
+      skip: (p - 1) * l,
       orderBy: { updatedAt: 'desc' },
       include: {
         guest: true,
@@ -59,71 +57,127 @@ router.get('/recent', async (req, res) => {
       }
     });
     res.json(recent);
-  } catch (err) {
-    res.status(500).json({ error: "Could not load recent activity: " + err });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Could not load recent activity" });
   }
 });
+
+// --- Helper Functions ---
+
+/**
+ * Ensures we have a valid Guest record.
+ * Logic: Priority to guestId, then Phone+Name match, then Create New.
+ */
+async function resolveGuest(tx, guestData) {
+  if (guestData.id) {
+    return await tx.guest.update({
+      where: { id: guestData.id },
+      data: guestData,
+    });
+  }
+
+  // TODO: Make sure phone has specific format, consider country codes too
+  // Check if a guest exists with this phone
+  const existingGuest = await tx.guest.findUnique({
+    where: { phone: guestData.phone }
+  });
+
+  // If phone exists AND name matches, it's the same person (Update)
+  if (existingGuest && existingGuest.firstName === guestData.firstName) {
+    return await tx.guest.update({
+      where: { id: existingGuest.id },
+      data: guestData,
+    });
+  }
+
+  // If no guest or phone belongs to someone else, create new
+  return await tx.guest.create({
+    data: guestData,
+  });
+}
+
+/**
+ * Validates that the sum of room prices matches the reported total.
+ */
+function validatePricing(rooms, totalAmount) {
+  const calculatedTotal = rooms.reduce((sum, r) => sum + Number(r.price), 0);
+  if (calculatedTotal !== Number(totalAmount)) {
+    return `Price mismatch: Rooms sum to ${calculatedTotal}, but total is ${totalAmount}`;
+  }
+  return undefined;
+}
+
+/**
+ * Maps the incoming request rooms to Prisma's RoomStay creation format.
+ */
+function mapRoomStays(rooms) {
+  return rooms.map((r) => ({
+    roomTypeId: r.roomTypeId,
+    startDate: new Date(r.startDate),
+    endDate: new Date(r.endDate),
+    price: r.price,
+    policies: r.policies || undefined, // Store the JSON array
+    adults: r.adults || 2,
+    children: r.children || 0,
+  }));
+}
+
+// --- Main Route ---
 
 /**
  * 3. POST: Create Reservation
  * Usage: POST /api/reservations
- * Body: { "guest": { "firstName": "John", "lastName": "Doe", "phone": "123", "email": "j@d.com" }, 
- * "rooms": [{ "type": "Double", "startDate": "2026-05-01", "endDate": "2026-05-05", "price": 500 }],
- * "staffId": 1, "totalAmount": 500, "received": 100, "accountId": 2, "method": "CREDIT_CARD" }
+ * Body: { "guest": { "id?": 12, "firstName": "John", "lastName": "Doe", "phone": "123", "email": "j@d.com" }, 
+ * "rooms": [{ "roomTypeId": 0, "startDate": "2026-05-01", "endDate": "2026-05-05", "price": 500, "policies": [{ policyId: 1, guestKey: 'A1', scope: 'GUEST' }, { policyId: 2, scope: 'STAY' }] }],
+ * "staffId": 1,
+ * "totalAmount": 500,
+ * "payments": [{ "amount": 250, "accountId": 12, "method": "CREDIT_CARD" }] }
  */
 router.post('/', async (req, res) => {
-  const { guest, rooms, staffId, totalAmount, received, accountId, method } = req.body;
+  const { 
+    guest,
+    rooms,
+    staffId,
+    totalAmount,
+    payments
+  } = req.body;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Upsert Guest
-      const guestRecord = await tx.guest.upsert({
-        where: { phone: guest.phone },
-        update: { firstName: guest.firstName, lastName: guest.lastName, email: guest.email },
-        create: { ...guest }
-      });
 
-      // Prepare RoomStays
-      const roomStaysData = [];
-      for (const r of rooms) {
-        const typeRecord = await tx.roomType.findUnique({ where: { name: r.type } });
-        roomStaysData.push({
-          roomTypeId: typeRecord?.id,
-          startDate: new Date(r.startDate),
-          endDate: new Date(r.endDate),
-          adults: r.adults || 2,
-          children: r.children || 0,
-          price: r.price
-        });
-      }
-
-      // Create Reservation
+      const guestRecord = await resolveGuest(tx, guest);
       const reservation = await tx.reservation.create({
         data: {
           guestId: guestRecord.id,
           staffId: staffId,
           totalAmount: totalAmount,
-          received: received || 0,
-          rooms: { create: roomStaysData }
+          status: "PENDING",
+          rooms: {
+            create: mapRoomStays(rooms)
+          }
         },
-        include: { rooms: true, guest: true }
+        include: { 
+          rooms: true, 
+          guest: true 
+        }
       });
 
-      // Handle Initial Payment
-      if (Number(received) !== 0 && accountId) {
-        await tx.transaction.create({
-          data: {
-            amount: received,
-            method: method || "CASH",
-            reservationId: reservation.id,
-            accountId: accountId
+      // Initial Payment (If applicable)
+      if (payments) {
+        for (var i = 0; i < payments.length; i++) {
+          let payment = payments[i];
+          if (payment.amount) {
+            await tx.transaction.create({
+              data: {
+                amount: payment.amount,
+                method: payment.method,
+                reservationId: reservation.id,
+                accountId: payment.accountId
+              }
+            });
           }
-        });
-
-        await tx.account.update({
-          where: { id: accountId },
-          data: { balance: { increment: received } }
-        });
+        }
       }
 
       return reservation;
@@ -131,84 +185,149 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(result);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ error: error.message });
+    console.error("Reservation POST Error:", error);
+    res.status(400).json({ error: error.message });
   }
 });
 
 /**
- * PUT: Update Reservation
- * Usage: PUT /api/reservations/1
- * Body: { "received": 500, "accountId": 2, "method": "BANK_TRANSFER" }
+ * 4. PUT: Update Reservation (Full Sync)
+ * Usage: PUT /api/reservations/:id
+ * Body: { 
+ *   "status": "CONFIRMED", 
+ *   "totalAmount": 1200,
+ *   "guest": { "firstName": "Jane", ... },
+ *   "rooms": [
+ *      { "id": 5, "price": 600, ... }, // Existing room (Update)
+ *      { "roomTypeId": 2, "price": 600, ... } // New room (Create)
+ *   ],
+ *   "transactions": [{ "amount": 100, "method": "CASH", "accountId": 1 }]
+ * }
  */
 router.put('/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
-  const { totalAmount, received, status, isActive, accountId, method, staffId, guest } = req.body;
+  const reservationId = parseInt(req.params.id);
+  const {
+    guest,
+    rooms,
+    transactions,
+    status,
+    staffId,
+    totalAmount
+  } = req.body;
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Get the current Reservation and the target Account
-      const [oldRes, targetAccount] = await Promise.all([
-        tx.reservation.findUnique({ where: { id }, select: { received: true } }),
-        accountId ? tx.account.findUnique({ where: { id: accountId } }) : null
-      ]);
+      // 1. Verify Reservation Exists
+      const existingRes = await tx.reservation.findUnique({
+        where: { id: reservationId },
+        include: { rooms: true, transactions: true }
+      });
+      if (!existingRes) throw new Error("Reservation not found");
 
-      if (!oldRes) throw new Error("Reservation not found");
-
-      const delta = Number(received) - Number(oldRes.received);
-
-      // 2. Financial Validation Logic
-      if (delta !== 0) {
-        if (!targetAccount) throw new Error("A valid AccountId is required for financial changes.");
-        if (!method) throw new Error("Payment method is required.");
-
-        // BACKEND VALIDATION: Does the Account Type allow this Method?
-        const allowedMethods = ACCOUNT_METHOD_MAP[targetAccount.type];
-        if (!allowedMethods.includes(method)) {
-          throw new Error(`Method ${method} is not allowed for ${targetAccount.type} accounts.`);
-        }
-
-        // 3. Log Transaction
-        await tx.transaction.create({
+      // 2. Handle Guest Update
+      if (guest) {
+        await tx.guest.update({
+          where: { id: existingRes.guestId },
           data: {
-            amount: delta,
-            method: method,
-            reservationId: id,
-            accountId: accountId
+            firstName: guest.firstName,
+            lastName: guest.lastName,
+            email: guest.email,
+            phone: guest.phone
           }
-        });
-
-        // 4. Update Account Balance
-        await tx.account.update({
-          where: { id: accountId },
-          data: { balance: { increment: delta } }
         });
       }
 
-      // 5. Save the Reservation Changes
+      // 3. Handle RoomStays (Delete-then-Update/Create approach)
+      if (rooms) {
+        const roomStayIds = rooms.map(r => r.id).filter(Boolean);
+        
+        // Remove rooms that are no longer in the list
+        await tx.roomStay.deleteMany({
+          where: {
+            reservationId: reservationId,
+            id: { notIn: roomStayIds }
+          }
+        });
+
+        // Update or Create rooms
+        for (const room of rooms) {
+          if (room.id) {
+            await tx.roomStay.update({
+              where: { id: room.id },
+              data: {
+                roomTypeId: room.roomTypeId,
+                startDate: new Date(room.startDate),
+                endDate: new Date(room.endDate),
+                price: room.price,
+                adults: room.adults,
+                children: room.children,
+                policies: room.policies
+              }
+            });
+          } else {
+            await tx.roomStay.create({
+              data: {
+                ...mapRoomStays([room])[0],
+                reservationId: reservationId
+              }
+            });
+          }
+        }
+      }
+
+      // 4. Handle Transactions (Payments)
+      if (transactions) {
+        const incomingTxIds = transactions.map(t => t.id).filter(Boolean);
+
+        await tx.transaction.deleteMany({
+          where: {
+            reservationId: reservationId,
+            id: { notIn: incomingTxIds }
+          }
+        });
+
+        for (const t of transactions) {
+          if (t.id) {
+            await tx.transaction.update({
+              where: { id: t.id },
+              data: {
+                amount: t.amount,
+                method: t.method,
+                accountId: t.accountId
+              }
+            });
+          } else if (t.amount) {
+            await tx.transaction.create({
+              data: {
+                amount: t.amount,
+                method: t.method,
+                accountId: t.accountId,
+                reservationId: reservationId
+              }
+            });
+          }
+        }
+      }
+
+      // 5. Finalize Reservation Details
       return await tx.reservation.update({
-        where: { id },
+        where: { id: reservationId },
         data: {
-          totalAmount,
-          received,
-          status,
-          isActive,
-          staffId,
-          guest: guest ? {
-            update: {
-              firstName: guest.firstName,
-              lastName: guest.lastName,
-              email: guest.email
-            }
-          } : undefined
+          status: status || existingRes.status,
+          staffId: staffId || existingRes.staffId,
+          totalAmount: totalAmount || existingRes.totalAmount,
         },
-        include: { guest: true, rooms: true }
+        include: {
+          guest: true,
+          rooms: { include: { roomType: true } },
+          transactions: { include: { account: true } }
+        }
       });
     });
 
     res.json(result);
   } catch (error) {
-    // We send a 400 because this is usually a validation failure
+    console.error("Reservation PUT Error:", error);
     res.status(400).json({ error: error.message });
   }
 });
