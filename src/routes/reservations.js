@@ -36,74 +36,100 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * GET: Search Reservations without pagination (Fuzzy-ish matching)
- * Usage: GET /api/reservations/search?q=Jhn do
+ * GET: Search Reservations with pagination (Fuzzy-ish matching)
+ * Usage: GET /api/reservations/search?q=Jhn do&page=1&limit=6
  */
 router.get('/search', async (req, res) => {
-  const { q } = req.query;
+  const { q, page = 1, limit = 6 } = req.query;
+  
+  const p = Math.max(1, parseInt(page));
+  const l = Math.max(1, parseInt(limit));
 
   if (!q || !q.trim()) {
-    return res.json([]);
+    return res.json({ reservations: [], totalPages: 1, totalCount: 0 });
   }
 
-  // Clean the string and split by spaces into an array of words/chars
   const searchWords = q.trim().split(/\s+/);
+  
+  // Construct the search condition so it can be reused for both data query and count query
+  const whereCondition = {
+    AND: searchWords.map(word => ({
+      guest: {
+        OR: [
+          { firstName: { contains: word, mode: 'insensitive' } },
+          { lastName: { contains: word, mode: 'insensitive' } },
+          { phone: { contains: word, mode: 'insensitive' } },
+          { email: { contains: word, mode: 'insensitive' } },
+        ]
+      }
+    }))
+  };
 
   try {
-    const results = await prisma.reservation.findMany({
-      orderBy: { updatedAt: 'desc' },
-      where: {
-        // Every single word typed must match somewhere in the guest object
-        AND: searchWords.map(word => ({
-          guest: {
-            OR: [
-              { firstName: { contains: word, mode: 'insensitive' } },
-              { lastName: { contains: word, mode: 'insensitive' } },
-              { phone: { contains: word, mode: 'insensitive' } },
-              { email: { contains: word, mode: 'insensitive' } },
-            ]
-          }
-        }))
-      },
-      include: {
-        guest: true,
-        rooms: { include: { roomType: true } },
-        transactions: true
-      }
-    });
+    // Run queries concurrently via Promise.all for optimized performance
+    const [totalCount, results] = await prisma.$transaction([
+      prisma.reservation.count({ where: whereCondition }),
+      prisma.reservation.findMany({
+        where: whereCondition,
+        orderBy: { updatedAt: 'desc' },
+        take: l,
+        skip: (p - 1) * l,
+        include: {
+          guest: true,
+          rooms: { include: { roomType: true } },
+          transactions: true
+        }
+      })
+    ]);
 
-    res.json(results);
+    const totalPages = Math.ceil(totalCount / l) || 1;
+
+    res.json({
+      reservations: results,
+      totalPages,
+      totalCount
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Search Error: ", error);
     res.status(500).json({ error: "Error performing search" });
   }
 });
 
 /**
- * 2. GET: Recent Activity (with Pagination)
- * Usage: GET /api/reservations/recent?page=2?limit=10
+ * GET: Recent Activity (with Pagination)
+ * Usage: GET /api/reservations/recent?page=1&limit=6
  */
 router.get('/recent', async (req, res) => {
-  const { page = 1, limit = 10 } = req.query;
+  const { page = 1, limit = 6 } = req.query;
+  
   const p = Math.max(1, parseInt(page));
   const l = Math.max(1, parseInt(limit));
 
   try {
-    const recent = await prisma.reservation.findMany({
-      // Adjusting your filter: Schema uses status/isActive? 
-      // Ensure the 'where' matches your model fields
-      take: l,
-      skip: (p - 1) * l,
-      orderBy: { updatedAt: 'desc' },
-      include: {
-        guest: true,
-        rooms: { include: { roomType: true } },
-        transactions: true
-      }
+    // Run queries concurrently
+    const [totalCount, recent] = await prisma.$transaction([
+      prisma.reservation.count(),
+      prisma.reservation.findMany({
+        take: l,
+        skip: (p - 1) * l,
+        orderBy: { updatedAt: 'desc' },
+        include: {
+          guest: true,
+          rooms: { include: { roomType: true } },
+          transactions: true
+        }
+      })
+    ]);
+
+    const totalPages = Math.ceil(totalCount / l) || 1;
+
+    res.json({
+      reservations: recent,
+      totalPages,
+      totalCount
     });
-    res.json(recent);
   } catch (error) {
-    console.error(error);
+    console.error("Recent Feed Error: ", error);
     res.status(500).json({ error: "Could not load recent activity" });
   }
 });
