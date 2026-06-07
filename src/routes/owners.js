@@ -4,7 +4,7 @@ import { prisma } from '../config/db.js';
 const router = express.Router();
 
 // Create a new Owner
-router.post('/owners', async (req, res) => {
+router.post('/', async (req, res) => {
   const { name, address } = req.body;
   try {
     const owner = await prisma.owner.create({ data: { name, address } });
@@ -17,7 +17,7 @@ router.post('/owners', async (req, res) => {
 });
 
 // Get all owners with their accounts
-router.get('/owners', async (req, res) => {
+router.get('/', async (req, res) => {
   const { includeInactive } = req.query;
 
   try {
@@ -38,7 +38,7 @@ router.get('/owners', async (req, res) => {
   }
 });
 
-router.get('/owners/:id', async (req, res) => {
+router.get('/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   try {
     const result = await prisma.owner.findUnique({ 
@@ -53,7 +53,7 @@ router.get('/owners/:id', async (req, res) => {
   }
 });
 
-router.put('owners/:id', async (req, res) => {
+router.put('/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   try {
     const { name, address } = req.body;
@@ -72,7 +72,7 @@ router.put('owners/:id', async (req, res) => {
   }
 });
 
-router.delete('/owners/:id', async (req, res) => {
+router.delete('/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   try {
     await prisma.owner.update({
