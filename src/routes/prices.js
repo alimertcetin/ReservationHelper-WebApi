@@ -97,7 +97,7 @@ router.put('/sync', async (req, res) => {
  * GET /api/prices/suggest?roomTypeId=1&startDate=2026-06-01&endDate=2026-06-05&policies=[{"policyId":3,"guestKey":"A1"},{"policyId":5}]
  */
 router.get('/suggest', async (req, res) => {
-  const { roomTypeId, startDate, endDate, policies: policiesJson } = req.query;
+  const { roomTypeId, startDate, endDate, policies } = req.query;
 
   if (!roomTypeId || !startDate || !endDate) {
     return res.status(400).json({ error: "Missing roomTypeId, startDate, or endDate" });
@@ -111,10 +111,12 @@ router.get('/suggest', async (req, res) => {
     // Parse applied policies from frontend (if any)
     let appliedOverlays = [];
     try {
-      appliedOverlays = policiesJson ? JSON.parse(policiesJson) : [];
+      appliedOverlays = policies ? JSON.parse(policies) : [];
     } catch (e) {
       appliedOverlays = [];
     }
+    console.log(JSON.stringify(policies ? JSON.parse(policies) : []));
+    console.log(JSON.stringify(appliedOverlays));
 
     // 1. Fetch relevant Data: Rules and Policy Definitions
     const [rules, dbPolicies] = await Promise.all([
