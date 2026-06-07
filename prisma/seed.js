@@ -93,19 +93,21 @@ async function main() {
       ownerId: owner.id,
       displayName: "Ziraat Bank Main",
       type: "BANK",
+      paymentMethods: ["Bank Transfer", "Credit Card", "Online"],
       details: {
         iban: "TR00 0000 0000 0000 0000 0000 00",
         branch: "Kadıköy"
       }
     }
   });
-
+  
   const cashAccount = await prisma.account.upsert({
     where: { id: 2 },
     update: {},
     create: {
       ownerId: owner.id,
       displayName: "Hotel Cash Register",
+      paymentMethods: ["Cash", "Debit Card"],
       type: "CASH"
     }
   });
@@ -294,7 +296,7 @@ async function main() {
       reservationId: reservation.id,
       accountId: bankAccount.id,
       amount: 2000,
-      method: "CREDIT_CARD"
+      method: "Credit Card"
     }
   });
 
@@ -305,7 +307,7 @@ async function main() {
       reservationId: reservation.id,
       accountId: cashAccount.id,
       amount: 2500,
-      method: "CASH"
+      method: "Cash"
     }
   });
 

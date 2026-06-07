@@ -107,6 +107,8 @@ model Account {
   displayName String // e.g., "Ziraat Bank Main"
   type        String  @default("BANK")
   isActive    Boolean @default(true)
+  // [ { id: 0, method: "Debit Card" }, { id: 1, method: "Cash" } ]
+  paymentMethods Json
 
   // Bank Specific Details (Nullable for CASH accounts)
   // Iban and other similiar fields will be stored in here

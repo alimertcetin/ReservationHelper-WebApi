@@ -5,7 +5,7 @@ const router = express.Router();
 
 // Create an Account
 router.post('/', async (req, res) => {
-  const { ownerId, displayName, type, details } = req.body;
+  const { ownerId, displayName, paymentMethods, type, details } = req.body;
 
   try {
     const account = await prisma.account.create({
@@ -13,6 +13,7 @@ router.post('/', async (req, res) => {
         ownerId: parseInt(ownerId),
         displayName,
         type,
+        paymentMethods,
         details: details == undefined ? null : details,
       }
     });
@@ -25,17 +26,35 @@ router.post('/', async (req, res) => {
 
 // Get all Accounts
 router.get('/', async (req, res) => {
+  const showAll = req.query.includeInactive === 'true';
+
   try {
-      const accounts = await prisma.account.findMany({
-        where: { isActive: true },
-        include: { owner: { select: { name: true } } }
-      });
-      res.json(accounts); 
-    }
-    catch(err) {
-      console.log("Account GET error: " + err);
-      res.status(500).json({ error: "Could not get accounts"} );
-    }
+    const accounts = await prisma.account.findMany({
+      where: showAll ? {} : { isActive: true },
+      include: { owner: { select: { name: true } } }
+    });
+
+    res.json(accounts); 
+  } catch (err) {
+    console.error("Account GET error:", err);
+    res.status(500).json({ error: "Could not get accounts" });
+  }
+});
+
+// Get account by id
+router.get('/:id', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const account = await prisma.account.findUnique({
+      where: { id: id },
+      include: { transactions: true, owner: { select: { name: true } } }
+    });
+
+    res.json(account);
+  } catch (err) {
+    console.error("Account GET error:", err);
+    res.status(500).json({ error: "Could not get accounts" });
+  }
 });
 
 router.put('/:id', async (req, res) => {
@@ -54,14 +73,44 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await prisma.account.update({
-      where: { id: parseInt(req.params.id) },
-      data: { isActive: false }
+    const accountId = parseInt(req.params.id);
+
+    // 1. Fetch the account AND its related transactions in one query
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      include: { transactions: true } // Name depends on your Prisma schema relation
     });
-    res.status(204).send();
+
+    // 2. Handle 404 if the account doesn't even exist
+    if (!account) {
+      return res.status(404).json({ error: "Account not found." });
+    }
+
+    // 3. If there are transactions, soft-delete it (isActive: false)
+    if (account.transactions.length > 0) {
+      await prisma.account.update({
+        where: { id: accountId },
+        data: { isActive: false }
+      });
+
+      // Return a 400 (Bad Request) or 200 (OK) indicating it was archived instead of deleted
+      return res.status(400).json({ 
+        error: "Cannot hard-delete an account with existing transaction records. Account has been deactivated instead." 
+      });
+    }
+
+    // 4. If there are NO transactions, hard-delete it completely
+    await prisma.account.delete({
+      where: { id: accountId }
+    });
+
+    // Success response for hard-delete
+    return res.status(204).send();
+
   } catch (err) {
-    console.error(err);
-    res.status(404).json({ error: "Could not delete account. It might be linked to transactions." });
+    // This now ONLY catches actual system/database errors (500 Internal Server Error)
+    console.error("Database error:", err);
+    return res.status(500).json({ error: "An unexpected error occurred on the server." });
   }
 });
 
