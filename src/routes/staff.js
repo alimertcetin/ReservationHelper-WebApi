@@ -6,7 +6,9 @@ const router = express.Router();
 // READ ALL
 router.get('/', async (req, res) => {
   try {
-    const staff = await prisma.staff.findMany();
+    const staff = await prisma.staff.findMany({
+      where: { isActive: true }
+    });
     res.json(staff);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -42,8 +44,9 @@ router.put('/:id', async (req, res) => {
 // DELETE
 router.delete('/:id', async (req, res) => {
   try {
-    await prisma.staff.delete({
-      where: { id: parseInt(req.params.id) }
+    await prisma.staff.update({
+      where: { id: parseInt(req.params.id) },
+      data: { isActive: false },
     });
     res.status(204).send();
   } catch (err) {
