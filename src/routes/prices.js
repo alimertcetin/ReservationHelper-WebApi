@@ -54,6 +54,7 @@ router.get('/all', async (req, res) => {
  */
 router.put('/sync', async (req, res) => {
   const { rules } = req.body;
+  console.log(JSON.stringify(rules, 0, 2));
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -70,7 +71,7 @@ router.put('/sync', async (req, res) => {
             endDate: new Date(rule.endDate),
             priority: rule.priority,
             roomTypePrices: {
-              create: rule.pricing.map(p => ({
+              create: rule.roomTypePrices.map(p => ({
                 roomTypeId: p.roomTypeId,
                 price: p.price,
                 overrides: p.overrides || [] // Array of {type, key, price}
