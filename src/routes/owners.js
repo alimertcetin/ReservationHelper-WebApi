@@ -75,6 +75,16 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   try {
+    await prisma.$transaction(async (tx) => {
+      await tx.account.update({
+        where: {
+          id: id
+        },
+        data: {
+          isActive: false
+        }
+      })
+    });
     await prisma.owner.update({
       where: { id: id },
       data: { isActive: false }
