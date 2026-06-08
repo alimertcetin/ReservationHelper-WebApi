@@ -18,15 +18,16 @@ router.post('/', async (req, res) => {
 
 // Get all owners with their accounts
 router.get('/', async (req, res) => {
-  const { includeInactive } = req.query;
+  const includeInactive = req.query.includeInactive === 'true';
 
   try {
     const owners = await prisma.owner.findMany({ 
-      where: { isActive: includeInactive === 'true' ? undefined : true },
+      where: includeInactive ? {} : { isActive: true },
       include: { 
         accounts: {
-          where: { isActive: includeInactive === 'true' ? undefined : true, },
-          orderBy: { id:'asc'} }
+          where: includeInactive ? {} : { isActive: true },
+          orderBy: { id: 'asc' } 
+        }
       },
     });
 
