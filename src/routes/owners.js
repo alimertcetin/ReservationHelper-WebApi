@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
   }
   catch (error) {
     console.error(error);
-    res.status(500).json({error:"Can't get owners"});
+    res.status(500).json({ error: "Can't get owners" });
   }
 });
 
