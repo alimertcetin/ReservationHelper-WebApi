@@ -7,6 +7,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const policies = await prisma.pricePolicy.findMany({
+      where: { isActive: true },
       orderBy: { id: 'asc' }
     });
     res.json(policies);
