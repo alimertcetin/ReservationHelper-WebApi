@@ -50,7 +50,7 @@ router.get('/:id', async (req, res) => {
   }
   catch (err) {
     console.error(err);
-    res.status(500).json({error:"Can't get owner with id: " + id});
+    res.status(500).json({error:"Can't get owner"});
   }
 });
 
@@ -69,7 +69,7 @@ router.put('/:id', async (req, res) => {
   }
   catch (err) {
     console.error(err);
-    res.status(500).json({error:"Can't update owner with id: " + id});
+    res.status(500).json({error:"Can't update owner."});
   }
 });
 
