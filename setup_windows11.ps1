@@ -37,12 +37,12 @@ if (Get-Command psql -ErrorAction SilentlyContinue) {
         $latestPsql = $foundFiles | Sort-Object Path -Descending | Select-Object -First 1
         $pgBinFolder = Split-Path $latestPsql.Path
         $env:Path += ";$pgBinFolder"
-        Write-Host "[+] psql aracı standart dizinde bulundu ve PATH'e eklendi." -ForegroundColor Green
+        Write-Host "[+] psql aracı standart dizinde tespit edildi ve işlem sürecindeki PATH değişkenine eklendi." -ForegroundColor Green
     } else {
         Write-Host "`n=========================================================" -ForegroundColor Red
         Write-Host "[HATA] PostgreSQL komut satırı aracına (psql.exe) ulaşılamadı!" -ForegroundColor Red
-        Write-Host "PostgreSQL bilgisayarınızda kurulu olmayabilir veya hedef dizin bulunamıyor." -ForegroundColor Yellow
-        Write-Host "Lütfen PostgreSQL'in bilgisayarınızda kurulu ve erişilebilir olduğundan emin olun." -ForegroundColor Yellow
+        Write-Host "PostgreSQL sistemde kurulu olmayabilir veya hedef dizin bulunamıyor." -ForegroundColor Yellow
+        Write-Host "PostgreSQL kurulumunu ve erişilebilirliğini kontrol edin." -ForegroundColor Yellow
         Write-Host "=========================================================" -ForegroundColor Red
         Exit
     }
@@ -101,28 +101,94 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     $env:Path += ";$env:ALLUSERSPROFILE\chocolatey\bin"
 }
 
+# Paket listesi veri yapısı - Varsayılan olarak paketler seçili durumdadır ($true)
 $packages = @(
-    [PSCustomObject]@{ ID = 1; Name = "Node.js LTS (Çalıştırma Ortamı)"; ChocoName = "nodejs-lts" },
-    [PSCustomObject]@{ ID = 2; Name = "Git (Sürüm Kontrol Sistemi)"; ChocoName = "git" }
+    [PSCustomObject]@{ Name = "Node.js LTS (Çalıştırma Ortamı)"; ChocoName = "nodejs-lts"; IsSelected = $true; Command = "node"; IsNoneOption = $false },
+    [PSCustomObject]@{ Name = "Git (Sürüm Kontrol Sistemi)"; ChocoName = "git"; IsSelected = $true; Command = "git"; IsNoneOption = $false },
+    [PSCustomObject]@{ Name = "Hiçbiri (Seçimleri Temizle)"; ChocoName = $null; IsSelected = $false; Command = $null; IsNoneOption = $true }
 )
 
-Write-Host "[*] Lütfen yüklemek istediğiniz paketleri yön tuşlarıyla gezip SPACE (Boşluk) ile seçin, ardından ENTER'a basın:" -ForegroundColor Yellow
-Write-Host "(Açılan listeden çoklu seçim yapıp 'Tamam' butonuna tıklayabilirsiniz)`n" -ForegroundColor Gray
+Write-Host "[*] Kullanım Klavuzu:" -ForegroundColor Gray
+Write-Host "    [Yukarı/Aşağı Ok Tuşları] Menü satırları arasında gezinir" -ForegroundColor Gray
+Write-Host "    [SPACE / Boşluk Tuşu]     İlgili paketi seçer veya seçimi kaldırır" -ForegroundColor Gray
+Write-Host "    [ENTER]                   Mevcut seçimleri onaylar ve işlem aşamasına geçer`n" -ForegroundColor Gray
 
-$selectedPackages = $packages | Out-GridView -Title "Yüklenecek Paketleri Seçin (Birden fazla seçmek için Ctrl veya Shift kullanabilirsiniz)" -PassThru
+$index = 0
+$running = $true
+$startTop = [Console]::CursorTop
+
+while ($running) {
+    # Menü arayüzü çizim işlemi
+    [Console]::SetCursorPosition(0, $startTop)
+    for ($i = 0; $i -lt $packages.Count; $i++) {
+        $p = $packages[$i]
+        
+        $checkSymbol = if ($p.IsSelected) { "[+]" } else { "[ ]" }
+        $checkColor = if ($p.IsSelected) { "Green" } else { "DarkGray" }
+        
+        if ($i -eq $index) {
+            Write-Host " > " -ForegroundColor Cyan -NoNewline
+            Write-Host "$checkSymbol " -ForegroundColor $checkColor -NoNewline
+            Write-Host $p.Name -ForegroundColor Cyan
+        } else {
+            Write-Host "   " -NoNewline
+            Write-Host "$checkSymbol " -ForegroundColor $checkColor -NoNewline
+            Write-Host $p.Name -ForegroundColor White
+        }
+    }
+
+    $key = [Console]::ReadKey($true)
+
+    switch ($key.Key) {
+        "UpArrow" {
+            if ($index -gt 0) { $index-- }
+        }
+        "DownArrow" {
+            if ($index -lt ($packages.Count -1)) { $index++ }
+        }
+        "Spacebar" {
+            # Durum tersleme işlemi (Toggle)
+            $packages[$index].IsSelected = -not $packages[$index].IsSelected
+            
+            # "Hiçbiri" seçeneği aktif edildiyse diğer tüm paketlerin seçim durumunu kaldırır
+            if ($packages[$index].IsNoneOption -and $packages[$index].IsSelected) {
+                for ($j = 0; $j -lt $packages.Count; $j++) {
+                    if (-not $packages[$j].IsNoneOption) {
+                        $packages[$j].IsSelected = $false
+                    }
+                }
+            }
+            # Herhangi bir paket aktif edildiyse "Hiçbiri" seçeneğinin durumunu kaldırır
+            if (-not $packages[$index].IsNoneOption -and $packages[$index].IsSelected) {
+                for ($j = 0; $j -lt $packages.Count; $j++) {
+                    if ($packages[$j].IsNoneOption) {
+                        $packages[$j].IsSelected = $false
+                    }
+                }
+            }
+        }
+        "Enter" {
+            $running = $false
+        }
+    }
+}
+
+Write-Host ""
+
+# Seçilmiş olan geçerli paketlerin filtrelenmesi
+$selectedPackages = $packages | Where-Object { $_.IsSelected -eq $true -and $_.IsNoneOption -eq $false }
 
 if ($selectedPackages) {
     foreach ($pkg in $selectedPackages) {
-        $cmdCheck = if ($pkg.ID -eq 1) { "node" } else { "git" }
-        if (-not (Get-Command $cmdCheck -ErrorAction SilentlyContinue)) {
-            Write-Host "[*] ${pkg.Name} kuruluyor..." -ForegroundColor Yellow
+        if (-not (Get-Command $pkg.Command -ErrorAction SilentlyContinue)) {
+            Write-Host "[*] $($pkg.Name) yükleme işlemi başlatılıyor..." -ForegroundColor Yellow
             choco install $pkg.ChocoName -y
         } else {
-            Write-Host "[+] ${pkg.Name} zaten sistemde kurulu." -ForegroundColor Green
+            Write-Host "[+] $($pkg.Name) sistemde mevcut, kurulum adımı atlandı." -ForegroundColor Green
         }
     }
 } else {
-    Write-Host "[*] Herhangi bir paket seçilmedi, bağımlılık yükleme adımı atlandı." -ForegroundColor SemiBrightCyan
+    Write-Host "[*] Herhangi bir paket seçilmedi, bağımlılık yükleme adımı atlandı." -ForegroundColor Cyan
 }
 
 
@@ -131,13 +197,13 @@ Write-Host "`n=========================================================" -Foregr
 Write-Host "           PostgreSQL Kimlik Doğrulama                   " -ForegroundColor Cyan
 Write-Host "=========================================================" -ForegroundColor Cyan
 
-$postgresAdminPass = Read-Host "PostgreSQL ana 'postgres' kullanıcısı şifresi? (Varsayılan: postgres)"
+$postgresAdminPass = Read-Host "PostgreSQL 'postgres' yönetici şifresi? (Varsayılan: postgres)"
 if ([string]::IsNullOrWhiteSpace($postgresAdminPass)) { $postgresAdminPass = "postgres" }
 
-$dbUser = Read-Host "Projeniz için oluşturulacak yeni kullanıcı adı? (Varsayılan: reservation_user)"
+$dbUser = Read-Host "Oluşturulacak yeni veritabanı kullanıcı adı? (Varsayılan: reservation_user)"
 if ([string]::IsNullOrWhiteSpace($dbUser)) { $dbUser = "reservation_user" }
 
-$dbPass = Read-Host "Proje kullanıcısı için şifre ne olsun? (Varsayılan: Reservation123!)"
+$dbPass = Read-Host "Oluşturulacak veritabanı kullanıcı şifresi? (Varsayılan: Reservation123!)"
 if ([string]::IsNullOrWhiteSpace($dbPass)) { $dbPass = "Reservation123!" }
 
 $dbName = Read-Host "Oluşturulacak veritabanı adı? (Varsayılan: reservation_db)"
@@ -146,20 +212,39 @@ if ([string]::IsNullOrWhiteSpace($dbName)) { $dbName = "reservation_db" }
 $env:PGPASSWORD = $postgresAdminPass
 Write-Host "[*] Kimlik bilgileri doğrulanıyor..." -ForegroundColor Yellow
 
+# Hata yakalama mekanizmasının durdurulmasını önlemek için yerel tercih geçici olarak değiştirilir
+$oldPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+
 $testAuth = & psql -U postgres -p 5432 -c "SELECT 1;" 2>&1
+
+# Tercih eski haline getirilir
+$ErrorActionPreference = $oldPreference
+
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "[HATA] PostgreSQL kimlik doğrulaması başarısız! Girdiğiniz 'postgres' admin şifresi yanlış."
+    Write-Host "`n=========================================================" -ForegroundColor Red
+    Write-Host "[HATA] PostgreSQL kimlik doğrulaması başarısız!" -ForegroundColor Red
+    Write-Host "Girilmiş olan 'postgres' yönetici şifresi veritabanı sunucusu tarafından reddedildi." -ForegroundColor Yellow
+    Write-Host "Lütfen şifrenizi kontrol edip betiği yeniden çalıştırın." -ForegroundColor Yellow
+    Write-Host "=========================================================" -ForegroundColor Red
     Exit
 }
 
-# Değişken çakışmalarını önlemek için String Concatenation (Birleştirme) yöntemiyle güvenli SQL oluşturma
 $createUserSql = 'DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = ''' + $dbUser + ''') THEN CREATE ROLE ' + $dbUser + ' WITH LOGIN PASSWORD ''' + $dbPass + ''' SUPERUSER; END IF; END $$;'
 & psql -U postgres -p 5432 -c $createUserSql | Out-Null
 
-$createDbSql = 'SELECT ''CREATE DATABASE ' + $dbName + ' OWNER ' + $dbUser + ''' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = ''' + $dbName + ''')\gexec'
-& psql -U postgres -p 5432 -c $createDbSql | Out-Null
+$checkDbSql = "SELECT 1 FROM pg_database WHERE datname = '" + $dbName + "';"
+$dbExists = & psql -U postgres -p 5432 -t -A -c $checkDbSql
 
-Write-Host "[+] Veritabanı rolleri ve şemalar başarıyla oluşturuldu." -ForegroundColor Green
+if ($dbExists -ne "1") {
+    Write-Host "[*] '$dbName' adlı veritabanı bulunamadı, veritabanı oluşturuluyor..." -ForegroundColor Yellow
+    $createDbSql = "CREATE DATABASE " + $dbName + " OWNER " + $dbUser + ";"
+    & psql -U postgres -p 5432 -c $createDbSql | Out-Null
+} else {
+    Write-Host "[+] '$dbName' veritabanı sistemde mevcut, oluşturma adımı atlandı." -ForegroundColor Green
+}
+
+Write-Host "[+] Veritabanı rolleri ve şemalar başarıyla yapılandırıldı." -ForegroundColor Green
 
 
 # --- 4. PROJE BAĞIMLILIKLARI VE PRISMA AYARLARI ---
@@ -168,25 +253,25 @@ Write-Host "                 Proje Entegrasyonu                      " -Foregrou
 Write-Host "=========================================================" -ForegroundColor Cyan
 
 if (Test-Path "package.json") {
-    Write-Host "[*] Proje dizini doğrulandı. Bağımlılıklar (npm install) yükleniyor..." -ForegroundColor Yellow
+    Write-Host "[*] Proje dizini doğrulandı. 'npm install' komutu çalıştırılıyor..." -ForegroundColor Yellow
     npm install
     
     $envUrl = 'DATABASE_URL="postgresql://' + $dbUser + ':' + $dbPass + '@localhost:5432/' + $dbName + '?schema=public"'
     
     if (-not (Test-Path ".env")) {
         New-Item -Path "." -Name ".env" -ItemType "file" -Value $envUrl | Out-Null
-        Write-Host "[+] .env dosyası başarıyla oluşturuldu." -ForegroundColor Green
+        Write-Host "[+] .env dosyası oluşturuldu." -ForegroundColor Green
     } else {
-        Write-Host "[!] .env dosyası zaten mevcut. Gerekirse bağlantı adresinizi şu şekilde güncelleyin:" -ForegroundColor Yellow
+        Write-Host "[!] .env dosyası mevcut. Veritabanı bağlantı adresi şablonu:" -ForegroundColor Yellow
         Write-Host "    $envUrl" -ForegroundColor Gray
     }
     
     if (Get-Content "package.json" | Select-String "prisma") {
-        Write-Host "[*] Prisma ORM tespit edildi. Şema yapıları oluşturuluyor..." -ForegroundColor Yellow
+        Write-Host "[*] Prisma ORM bağımlılığı tespit edildi. 'npx prisma generate' komutu çalıştırılıyor..." -ForegroundColor Yellow
         npx prisma generate
     }
 } else {
-    Write-Host "[!] 'package.json' bulunamadı! Lütfen betiği projenin kök klasöründe çalıştırın." -ForegroundColor Yellow
+    Write-Host "[!] 'package.json' bulunamadı! Betiği projenin kök dizininde çalıştırın." -ForegroundColor Yellow
 }
 
 Write-Host "`n=========================================================" -ForegroundColor Green
