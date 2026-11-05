@@ -79,7 +79,7 @@ router.delete('/:id', async (req, res) => {
     await prisma.$transaction(async (tx) => {
       await tx.account.update({
         where: {
-          id: id
+          ownerId: id
         },
         data: {
           isActive: false
